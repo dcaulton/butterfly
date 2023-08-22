@@ -98,14 +98,14 @@ class AskController():
         #Convert relevant knowledge items into a 'table' to be included as context for the prompt
         self.knowledge = '\t'.join(('ID','manufacturer','operating system','product','answer','steps'))
         for index, row in df_answers.iterrows():
-            back_string = '\t'.join(
+            back_string = '\t'.join((
                 row['id'], 
                 row['manufacturer_label'], 
                 row['os_name'], 
                 row['product_name'], 
                 row['topic_name'], 
                 row['steps_text']
-            )
+            ))
             self.knowledge = self.knowledge + '\n' +  back_string
 
         # Identify relevant knowledge IDs

@@ -1,6 +1,7 @@
 import copy
 import logging
 from traceback import format_exc
+import uuid
 
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -82,4 +83,22 @@ class ChatSessionViewSet(viewsets.ViewSet):
     }
     r.update_session_data(pk, data_dict)
     return Response()
+
+
+class ChatAskStaticViewSet(viewsets.ViewSet):
+  def create(self, request):
+    fake_ids = []
+    for i in range(10):
+        fake_ids.append(str(uuid.uuid4()))
+    answer_data = {
+      'response_text': 'This is the static response text',
+      'list_ids': fake_ids,
+    }
+    session_key = 'qelp_static_' + str(uuid.uuid4())
+    ret_dict = {
+      'session_key': session_key,
+      'response': answer_data,
+    }
+    return Response(ret_dict)
+
 
