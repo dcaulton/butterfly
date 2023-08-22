@@ -101,4 +101,14 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
     }
     return Response(ret_dict)
 
+  def list(self, request):
+    session_key = 'qelp_static_' + str(uuid.uuid4())
+    ret_dict = {
+      'session_key': session_key,
+      'response': {
+        'response_text': 'HEY, this is not a real endpoint'
+      },
+    }
+    return Response(ret_dict)
+
 
