@@ -3,6 +3,7 @@ import os
 import inspect
 
 import openai
+openai.verify_ssl_certs = False
 
 logger = logging.getLogger(__name__)
 
