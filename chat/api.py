@@ -106,7 +106,8 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
     ret_dict = {
       'session_key': session_key,
       'response': {
-        'response_text': 'HEY, this is not a real endpoint'
+        'response_text': 'This is the response text',
+        'ids': '1,3,5'
       },
     }
     return Response(ret_dict)
