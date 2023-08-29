@@ -86,15 +86,27 @@ class ChatSessionViewSet(viewsets.ViewSet):
 
 
 class ChatAskStaticViewSet(viewsets.ViewSet):
+
   def create(self, request):
-    fake_ids = []
-    for i in range(10):
-        fake_ids.append(str(uuid.uuid4()))
-    answer_data = {
-      'response_text': 'This is the static response text',
-      'list_ids': fake_ids,
-    }
     session_key = 'qelp_static_' + str(uuid.uuid4())
+    answer_data = {
+        "id": "bb15d813-e824-4346-8a66-9fe0b4752b7d",
+        "manufacturer": "Samsung",
+        "product": "Galaxy S9",
+        "os": "Android",
+        "steps": [
+            "Go to the Start screen.\n To open the menu, swipe up or down on the screen.",
+            "Choose Settings.\n",
+            "Choose Connections.",
+            "Choose Wi-Fi.",
+            "Enable Wi-Fi.\n",
+            "All available wireless networks within range of your Samsung Galaxy S9 are listed.  \n Choose the network to which you want to connect.\n If the network is not listed, make sure that the network is enabled and within range of the Samsung Galaxy S9.",
+            "If this screen appears, enter the password and choose Connect.  \n If this screen does not appear, go to the next step.\n",
+         
+            "The Samsung Galaxy S9 is now connected to the Wi-Fi network.\n Return to the Start screen."
+        ],
+        "imgURL": "https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png"
+  }
     ret_dict = {
       'session_key': session_key,
       'response': answer_data,
@@ -103,12 +115,27 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
 
   def list(self, request):
     session_key = 'qelp_static_' + str(uuid.uuid4())
+    answer_data = {
+        "id": "bb15d813-e824-4346-8a66-9fe0b4752b7d",
+        "manufacturer": "Samsung",
+        "product": "Galaxy S9",
+        "os": "Android",
+        "steps": [
+            "Go to the Start screen.\n To open the menu, swipe up or down on the screen.",
+            "Choose Settings.\n",
+            "Choose Connections.",
+            "Choose Wi-Fi.",
+            "Enable Wi-Fi.\n",
+            "All available wireless networks within range of your Samsung Galaxy S9 are listed.  \n Choose the network to which you want to connect.\n If the network is not listed, make sure that the network is enabled and within range of the Samsung Galaxy S9.",
+            "If this screen appears, enter the password and choose Connect.  \n If this screen does not appear, go to the next step.\n",
+         
+            "The Samsung Galaxy S9 is now connected to the Wi-Fi network.\n Return to the Start screen."
+        ],
+        "imgURL": "https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png"
+  }
     ret_dict = {
       'session_key': session_key,
-      'response': {
-        'response_text': 'This is the response text',
-        'ids': '1,3,5'
-      },
+      'response': answer_data,
     }
     return Response(ret_dict)
 
