@@ -87,56 +87,73 @@ class ChatSessionViewSet(viewsets.ViewSet):
 
 class ChatAskStaticViewSet(viewsets.ViewSet):
 
+  def build_response_data(self):
+      the_session_key = 'qelp_static_' + str(uuid.uuid4())
+      the_image_url =  "https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png"
+      static_response_data = {
+          'session_key': the_session_key,
+          'response_data': {
+              'message': "The knowledgebase topic that answers your question is \"How to connect to a WiFi network\" for Samsung Galaxy S9.",
+              'kb_items': [
+                  {
+                      "id": "0232ab81-e44f-4f00-b772-67907b42f61e",
+                      "manufacturer": "Samsung",
+                      "product": "Galaxy S9",
+                      "os": "Android",
+                      "steps": [
+                          "* Go to the Start screen.\n* To open the menu, swipe up or down on the screen.",
+                          "* Choose *Settings*.\n",
+                          "* Choose *Connections*."
+                      ],
+                      "imgURL": the_image_url
+                  },
+                  {
+                      "id": "1872abc8-e44f-4f00-b772-679078aef020",
+                      "manufacturer": "Samsung",
+                      "product": "Galaxy S9",
+                      "os": "Android",
+                      "steps": [
+                          "* Go to the Start screen.\n* To open the menu, swipe up or down on the screen.",
+                          "* Choose *Settings*.\n",
+                          "* Choose *Connections*."
+                      ],
+                      "imgURL": the_image_url
+                  },
+                  {
+                      "id": "bb15d813-e824-4346-8a66-9fe0b4752b7d",
+                      "manufacturer": "Samsung",
+                      "product": "Galaxy S9",
+                      "os": "Android",
+                      "steps": [
+                          "* Go to the Start screen.\n* To open the menu, swipe up or down on the screen.",
+                          "* Choose *Settings*.\n",
+                          "* Choose *Connections*."
+                      ],
+                      "imgURL": the_image_url
+                  },
+                  {
+                      "id": "e41a5a69-a206-4498-855e-0b3f1f0b56cc",
+                      "manufacturer": "Samsung",
+                      "product": "Galaxy S9",
+                      "os": "Android",
+                      "steps": [
+                          "* Go to the Start screen.\n* To open the menu, swipe up or down on the screen.\n",
+                          "* Choose *Settings*.",
+                          "* Choose *Connections*."
+                      ],
+                      "imgURL": the_image_url
+                  }
+              ],
+          }
+      }
+      return static_response_data
+
   def create(self, request):
-    session_key = 'qelp_static_' + str(uuid.uuid4())
-    answer_data = {
-        "id": "bb15d813-e824-4346-8a66-9fe0b4752b7d",
-        "manufacturer": "Samsung",
-        "product": "Galaxy S9",
-        "os": "Android",
-        "steps": [
-            "Go to the Start screen.\n To open the menu, swipe up or down on the screen.",
-            "Choose Settings.\n",
-            "Choose Connections.",
-            "Choose Wi-Fi.",
-            "Enable Wi-Fi.\n",
-            "All available wireless networks within range of your Samsung Galaxy S9 are listed.  \n Choose the network to which you want to connect.\n If the network is not listed, make sure that the network is enabled and within range of the Samsung Galaxy S9.",
-            "If this screen appears, enter the password and choose Connect.  \n If this screen does not appear, go to the next step.\n",
-         
-            "The Samsung Galaxy S9 is now connected to the Wi-Fi network.\n Return to the Start screen."
-        ],
-        "imgURL": "https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png"
-  }
-    ret_dict = {
-      'session_key': session_key,
-      'response': answer_data,
-    }
-    return Response(ret_dict)
+    resp = self.build_response_data()
+    return Response(resp)
 
   def list(self, request):
-    session_key = 'qelp_static_' + str(uuid.uuid4())
-    answer_data = {
-        "id": "bb15d813-e824-4346-8a66-9fe0b4752b7d",
-        "manufacturer": "Samsung",
-        "product": "Galaxy S9",
-        "os": "Android",
-        "steps": [
-            "Go to the Start screen.\n To open the menu, swipe up or down on the screen.",
-            "Choose Settings.\n",
-            "Choose Connections.",
-            "Choose Wi-Fi.",
-            "Enable Wi-Fi.\n",
-            "All available wireless networks within range of your Samsung Galaxy S9 are listed.  \n Choose the network to which you want to connect.\n If the network is not listed, make sure that the network is enabled and within range of the Samsung Galaxy S9.",
-            "If this screen appears, enter the password and choose Connect.  \n If this screen does not appear, go to the next step.\n",
-         
-            "The Samsung Galaxy S9 is now connected to the Wi-Fi network.\n Return to the Start screen."
-        ],
-        "imgURL": "https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png"
-  }
-    ret_dict = {
-      'session_key': session_key,
-      'response': answer_data,
-    }
-    return Response(ret_dict)
+    resp = self.build_response_data()
+    return Response(resp)
 
 
