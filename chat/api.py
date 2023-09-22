@@ -93,7 +93,7 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
       static_response_data = {
           'session_key': the_session_key,
           'response_data': {
-              'message': "The knowledgebase topic that answers your question is \"How to connect to a WiFi network\" for Samsung Galaxy S9.",
+              'message': "I need a little more information to get your answer.  What is the version of your phone?",
               'kb_items': [
                   {
                       "id": "0232ab81-e44f-4f00-b772-67907b42f61e",
@@ -110,7 +110,7 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
                   {
                       "id": "1872abc8-e44f-4f00-b772-679078aef020",
                       "manufacturer": "Samsung",
-                      "product": "Galaxy S9",
+                      "product": "Galaxy S10",
                       "os": "Android",
                       "steps": [
                           "* Go to the Start screen.\n* To open the menu, swipe up or down on the screen.",
@@ -122,7 +122,7 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
                   {
                       "id": "bb15d813-e824-4346-8a66-9fe0b4752b7d",
                       "manufacturer": "Samsung",
-                      "product": "Galaxy S9",
+                      "product": "Galaxy S20",
                       "os": "Android",
                       "steps": [
                           "* Go to the Start screen.\n* To open the menu, swipe up or down on the screen.",
@@ -134,7 +134,7 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
                   {
                       "id": "e41a5a69-a206-4498-855e-0b3f1f0b56cc",
                       "manufacturer": "Samsung",
-                      "product": "Galaxy S9",
+                      "product": "Galaxy S20 Ultra",
                       "os": "Android",
                       "steps": [
                           "* Go to the Start screen.\n* To open the menu, swipe up or down on the screen.\n",
