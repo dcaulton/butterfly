@@ -90,6 +90,7 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
   def build_response_data(self):
       the_session_key = 'qelp_static_' + str(uuid.uuid4())
       the_image_url =  "https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png"
+      the_tutorial_url = "http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page=samsung-galaxy-s9-android-9-(pie)/apps/how-to-set-up-the-app-store/p5_d3_t12070_o3"
       static_response_data = {
           'session_key': the_session_key,
           'response_data': {
@@ -105,7 +106,8 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
                           "* Choose *Settings*.\n",
                           "* Choose *Connections*."
                       ],
-                      "imgURL": the_image_url
+                      "tutorial_link": the_tutorial_url,
+                      "image_link": the_image_url
                   },
                   {
                       "id": "1872abc8-e44f-4f00-b772-679078aef020",
@@ -117,7 +119,8 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
                           "* Choose *Settings*.\n",
                           "* Choose *Connections*."
                       ],
-                      "imgURL": the_image_url
+                      "tutorial_link": the_tutorial_url,
+                      "image_link": the_image_url
                   },
                   {
                       "id": "bb15d813-e824-4346-8a66-9fe0b4752b7d",
@@ -129,7 +132,8 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
                           "* Choose *Settings*.\n",
                           "* Choose *Connections*."
                       ],
-                      "imgURL": the_image_url
+                      "tutorial_link": the_tutorial_url,
+                      "image_link": the_image_url
                   },
                   {
                       "id": "e41a5a69-a206-4498-855e-0b3f1f0b56cc",
@@ -141,7 +145,8 @@ class ChatAskStaticViewSet(viewsets.ViewSet):
                           "* Choose *Settings*.",
                           "* Choose *Connections*."
                       ],
-                      "imgURL": the_image_url
+                      "tutorial_link": the_tutorial_url,
+                      "image_link": the_image_url
                   }
               ],
           }
