@@ -56,7 +56,6 @@ class AskController():
             return
 
         self.history = self.chat_data.get('chat_history')
-#        self.conversation_sumary = self.chat_data.get('conversation_summary')
 
         context = self.gpt_controller.same_context(self.conversation_summary, self.input_txt, self.global_cost).lower()
         if context == 'yes':
@@ -255,8 +254,7 @@ class AskController():
             return df_answers
         ###############################################
         with open("keys/openai_phone_support.txt","r") as f:
-            my_API_key = f.read()
-
+            my_API_key = f.read().strip()
         openai.api_key = my_API_key
         ###############################################
         # Same topic function
@@ -534,9 +532,12 @@ class AskController():
 
         #Take the users side of the conversation and summarise into a coherent question (as the chat evolves)
         input_txt = self.input_txt
+        history = self.chat_data.get('chat_history', [])
 
         #Check to see if context changed before submitting the question to the CosSim KB function
+        # TODO load conversation summary from the session on redis
         context = same_context(conversation_summary, input_txt).lower()
+        conversation_summary = self.chat_data.get('chat_history')
         if context == 'yes':
             question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
         else:
@@ -551,11 +552,23 @@ class AskController():
 
         #Convert relevant knowledge items into a 'table' to be included as context for the prompt
         knowledge = 'ID\tmanufacturer\toperating system\tproduct\tanswer\tsteps'
+        answer_as_list = []
         for index, row in df_answers.iterrows():
             knowledge = knowledge + '\n' +  row['id'] + '\t'  + row['manufacturer_label']+ '\t'  + row['os_name']+ '\t' + row['product_name']+ '\t'  + row['topic_name']+ '\t'  + row['steps_text']
+            new_obj = {
+                'id': row['id'],
+                'manufacturer': row['manufacturer_label'],
+                'product': row['product_name'],
+                'os': row['os_name'],
+                'steps': row['steps_text'],
+            }
+            answer_as_list.append(new_obj)
 
         # Identify relevant knowledge IDs
         list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)#.split(',')
+        list_ids_as_arr = [x.strip() for x in list_ids.split(',')]
+        print(f'list ids as an array are {list_ids_as_arr}')
+        print(f'answer as an array are {answer_as_list}')
 
         #Come up with a response to the question
         data = run_prompt_3_5(search_txt, knowledge, conversation_summary).split('\n')
@@ -564,7 +577,10 @@ class AskController():
         data = ''.join(data)
 
         #add Q&A to a list tracking the conversation
-        history.append({"role": "user", "content" :input_txt}) 
+        if context == 'yes':
+            history.append({"role": "user", "content" :input_txt}) 
+        else:
+            history.append({"role": "user", "content" :input_txt, "context_change": True}) 
         history.append({"role": "assistant", "content" :data}) 
 
         #Format the list as text to feed back to GPT summary function
@@ -577,6 +593,7 @@ class AskController():
 
         #summarise transcription for question answer function (this is after the results to reduce wait time)
         conversation_summary = summarise_history_3_5(transcript)
+        self.chat_data['conversation_summary'] = conversation_summary
 
         import json
 
@@ -607,20 +624,32 @@ class AskController():
         #    print(output_json)
         print('output is ', output_json)
         ###############################################
-        ###############################################
-        ###############################################
-        ###############################################
-        ###############################################
-        ###############################################
-        ###############################################
+        self.chat_data['chat_history'] = history
+ 
+        kb_items = []
+        for lid in list_ids_as_arr:
+            kb_items.append({
+              'id': lid,
+              'manufacturer': 'oh my',
+              'product': 'hey',
+              'os': 'there', 
+              'steps': [
+                 'they',
+                 'are',
+                 'these',
+              ],
+              'tutorial_link': 'some url',
+              'image_link': 'some other url',
+            })
 
+        if answer_as_list:
+            return {
+                'message': data,
+                'kb_items': answer_as_list,
+            }
+        else:
+            return {
+                'message': data,
+                'kb_items': kb_items,
+            }
 
-
-
-
-
-
-        return {
-            'response_text': max(df_knowledge['index']),
-            'ids': self.list_ids,
-        }
