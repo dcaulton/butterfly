@@ -530,7 +530,82 @@ class AskController():
         language_name = 'en_UK'
         list_ids = ''
         ###############################################
-        ###############################################
+        #run each time you want to add to the conversation
+
+        #Take the users side of the conversation and summarise into a coherent question (as the chat evolves)
+        input_txt = self.input_txt
+
+        #Check to see if context changed before submitting the question to the CosSim KB function
+        context = same_context(conversation_summary, input_txt).lower()
+        if context == 'yes':
+            question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
+        else:
+            question_summary = input_txt # search criteria from new question only
+
+        #print('same_context: ' + str(context))
+
+        search_txt = summarise_question(question_summary) 
+
+        #Search and return relevant docs from the knowledge base
+        df_answers = K_BOT (search_txt,language_name,list_ids)
+
+        #Convert relevant knowledge items into a 'table' to be included as context for the prompt
+        knowledge = 'ID\tmanufacturer\toperating system\tproduct\tanswer\tsteps'
+        for index, row in df_answers.iterrows():
+            knowledge = knowledge + '\n' +  row['id'] + '\t'  + row['manufacturer_label']+ '\t'  + row['os_name']+ '\t' + row['product_name']+ '\t'  + row['topic_name']+ '\t'  + row['steps_text']
+
+        # Identify relevant knowledge IDs
+        list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)#.split(',')
+
+        #Come up with a response to the question
+        data = run_prompt_3_5(search_txt, knowledge, conversation_summary).split('\n')
+        while("" in data):
+            data.remove("")
+        data = ''.join(data)
+
+        #add Q&A to a list tracking the conversation
+        history.append({"role": "user", "content" :input_txt}) 
+        history.append({"role": "assistant", "content" :data}) 
+
+        #Format the list as text to feed back to GPT summary function
+        x=0
+        transcript =''
+        for i in history:
+            text = history[x]['role'] + '\t' + history[x]['content']
+            transcript = transcript + text +'\n'
+            x=x+1
+
+        #summarise transcription for question answer function (this is after the results to reduce wait time)
+        conversation_summary = summarise_history_3_5(transcript)
+
+        import json
+
+        # a Python object (dict):
+        output = {
+        "conversationID": "007",
+        #"question": input_txt,
+        #"search": search_txt,
+        "response": data,
+        "IDS": list_ids
+        }
+
+        # convert into JSON:
+        output_json = json.dumps(output['response'])
+
+          
+        # the result is a JSON string:
+
+        filtered_df=df_answers[df_answers.id.isin(list_ids.split(','))]
+        listofids = filtered_df['id']
+
+        #if not filtered_df.empty:
+        #    detailsjson=get_knowledgebase_details(filtered_df)
+        #    if detailsjson is not None:
+        #       print(output_json) 
+        #       print(detailsjson)
+        #else:
+        #    print(output_json)
+        print('output is ', output_json)
         ###############################################
         ###############################################
         ###############################################

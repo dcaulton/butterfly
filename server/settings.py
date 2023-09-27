@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'rest_framework',
     'chat',
 ]
@@ -46,6 +47,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     "whitenoise.middleware.WhiteNoiseMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -151,9 +153,6 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 SERVE_STATIC = True
 
-CORS_ORIGIN_ALLOW_ALL = True
-
-
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -176,3 +175,5 @@ CACHES = {
 
 #SESSION_FILE_PATH  = 'sessions'
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+
+CORS_ALLOW_ALL_ORIGINS = True

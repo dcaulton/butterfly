@@ -26,6 +26,7 @@ daphne
 decorator
 Django
 djangorestframework
+django-cors-headers
 executing
 filelock
 fonttools
