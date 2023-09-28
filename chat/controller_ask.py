@@ -521,34 +521,41 @@ class AskController():
             info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
             info_resp = requests.get(info_url).json()
             
-            # build link, remove intermediate fields used to make that link
             topic_type = kb_obj.get('topic_type')
             flow = kb_obj.get('flow')
+
+            product_slug = info_resp['product']['slug']
+            cat_slug = info_resp['category']['slug']
+            topic_slug = info_resp['topic']['slug']
+            product_id = info_resp['product']['id']
+            topic_id = info_resp['topic']['id']
+            os_id = info_resp['os']['id']
+            image_url = info_resp['product']['image']
+
+
             if topic_type == 'regular': # its a usecase
                 base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page='
-                product_slug = info_resp['product']['slug']
-                cat_slug = info_resp['category']['slug']
-                topic_slug = info_resp['topic']['slug']
-
-                url_parts = [f'{base_url}{product_slug}']
-                url_parts.append(cat_slug)
-                url_parts.append(topic_slug)
-                product_id = info_resp['product']['id']
-                topic_id = info_resp['topic']['id']
-                os_id = info_resp['os']['id']
                 last_segment = f'p5_d{product_id}_t{topic_id}_o{os_id}'
-                url_parts.append(last_segment)
-                the_url = '/'.join(s.strip('/') for s in url_parts)
-                kb_obj['tutorial_link'] = the_url
-                image_url = info_resp['product']['image']
-                kb_obj['image_link'] = image_url
+            elif (topic_type in ['flow', 'flow_continued']) and (flow == 'null'):  # its a TroubshootingWizard
+                base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/hey-be/nl_BE/?page='
+                last_segment = f'p14_d{product_id}_t{topic_id}'
+            else:  # its an Installation Assistant
+                base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/hey-be/nl_BE/?page='
+                last_segment = f'p15_d{product_id}_t{topic_id}'
 
-                info_steps = []
-                for step_data in info_resp['steps']:
-                    info_steps.append(step_data['text'])
-                kb_obj['steps'] = info_steps 
-#            elif (topic_type in ['flow', 'flow_continued']) and (flow == 'null'):  # its a TroubshootingWizard
-#            else:  # its an Installation Assistant
+            # common build logic
+            url_parts = [f'{base_url}{product_slug}']
+            url_parts.append(cat_slug)
+            url_parts.append(topic_slug)
+            url_parts.append(last_segment)
+            the_url = '/'.join(s.strip('/') for s in url_parts)
+            kb_obj['tutorial_link'] = the_url
+            kb_obj['image_link'] = image_url
+
+            info_steps = []
+            for step_data in info_resp['steps']:
+                info_steps.append(step_data['text'])
+            kb_obj['steps'] = info_steps 
 
 
 
@@ -595,22 +602,28 @@ class AskController():
             new_obj = {
                 'id': row['id'],
                 'manufacturer': row['manufacturer_label'],
-#                'manufacturer_id': int(row['manufacturer_id']),
                 'os': row['os_name'],
-#                'os_id': int(row['os_id']),
                 'product': row['product_name'],
-#                'product_id': int(row['product_id']),
                 'flow': row['flow'],
                 'topic_type': row['topic_type'],
-#                'topic_name': row['topic_name'],
-#                'topic_id': int(row['topic_id']),
-#                'category_id': int(row['category_id']),
-#                'category_slug': row['category_slug'],
-#                'topic_slug': row['topic_slug'],
-#                'steps': row['steps'],
             }
             build_tutorial_url(new_obj)
             answer_as_list.append(new_obj)
+
+
+        ######################## DMC FOR TESTING
+#        new_obj = {
+#            'id': 'fd79e136-0553-42fc-89db-fd94b41c9b39',
+#            'manufacturer': 'TCL',
+#            'os': 'Android',
+#            'product': "10 Pro (Single SIM)",
+#            'flow': 'null',
+#            'topic_type': 'flow',
+#        }
+#        build_tutorial_url(new_obj)
+#        answer_as_list.append(new_obj)
+        ######################## END TESTING
+        
 
         # Identify relevant knowledge IDs
         list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)#.split(',')
