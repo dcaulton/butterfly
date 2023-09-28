@@ -236,8 +236,7 @@ class AskController():
             df_outliers = find_outliers_IQR(df_knowledge['cos_sim_log']).to_frame().reset_index(level=0, inplace=False)
             
             #Create df of potential answers
-            df_answers = df_knowledge[['id','language_name','manufacturer_label','os_name','product_name','topic_name','steps_text','cos_sim_max','cos_sim_log',]].sort_values(by=['cos_sim_max'], 
-                                                                                ascending = False).head(len(df_outliers['index']))
+            df_answers = df_knowledge[['id','language_name','manufacturer_label','manufacturer_id','os_name','os_id','product_name','product_id','topic_name','flow','topic_type','topic_id','topic_slug','category_id','category_slug','steps_text','cos_sim_max','cos_sim_log',]].sort_values(by=['cos_sim_max'], ascending = False).head(len(df_outliers['index']))
             
             df_answers = df_answers[df_answers['language_name'] == language_name]
 
@@ -467,9 +466,7 @@ class AskController():
                         'product': product_name,
                         'os': os_name,
                         'steps': first_three_steps,
-                        'tutorial_link':"http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page=samsung-galaxy-s9-android-9-%28pie%29%2Fapps%2Fhow-to-set-up-the-app-store%2Fp5_d3_t12070_o3",
                         'imgURL': imageURL
-                
                         }
                         new_data.append(data_dict)
                     new_df = pd.DataFrame(new_data)
@@ -516,6 +513,27 @@ class AskController():
                 return json.dumps(data, indent=4)
             else:
                 return "No data found for the target IDs."
+
+
+
+        def build_tutorial_url(new_obj):
+            new_obj = {
+                'id': row['id'],
+                'manufacturer': row['manufacturer_label'],
+                'product': row['product_name'],
+                'os': row['os_name'],
+                'steps': row['steps_text'],
+                'manufacturer_id': row['manufacturer_id'],
+                'os_id': row['os_id'],
+                'product_id': row['product_id'],
+                'topic_name': row['topic_name'],
+                'category_id': row['category_id'],
+                'category_slug': row['category_slug'],
+                'topic_slug': row['topic_slug'],
+            }
+            # build link, remove intermediate fields used to make that link
+
+
         ###############################################
         #Initialise and reset variables, run this once before starting a new chat session
         global_cost = 0
@@ -554,14 +572,26 @@ class AskController():
         knowledge = 'ID\tmanufacturer\toperating system\tproduct\tanswer\tsteps'
         answer_as_list = []
         for index, row in df_answers.iterrows():
-            knowledge = knowledge + '\n' +  row['id'] + '\t'  + row['manufacturer_label']+ '\t'  + row['os_name']+ '\t' + row['product_name']+ '\t'  + row['topic_name']+ '\t'  + row['steps_text']
+            knowledge =  knowledge + '\n' + row['id'] + '\t' + row['manufacturer_label'] + '\t' + str(row['manufacturer_id']) + '\t' + row['os_name'] + '\t' + str(row['os_id']) + '\t' + row['product_name'] + '\t' + str(row['product_id'])+ '\t' + str(row['flow'])  + '\t'+ str(row['topic_type']) + '\t'+ row['topic_name'] + '\t'+ str(row['topic_id']) +'\t' + str(row['category_id']) + '\t' + str(row['category_slug']) + '\t' + str(row['topic_slug']) + '\t' + row['steps_text']
+
             new_obj = {
                 'id': row['id'],
-                'manufacturer': row['manufacturer_label'],
-                'product': row['product_name'],
-                'os': row['os_name'],
-                'steps': row['steps_text'],
+                'manufacturer_label': row['manufacturer_label'],
+                'manufacturer_id': row['manufacturer_id'],
+                'os_name': row['os_name'],
+                'os_id': row['os_id'],
+                'product_name': row['product_name'],
+                'product_id': row['product_id'],
+                'flow': row['flow'],
+                'topic_type': row['topic_type'],
+                'topic_name': row['topic_name'],
+                'topic_id': row['topic_id'],
+                'category_id': row['category_id'],
+                'category_slug': row['category_slug'],
+                'topic_slug': row['topic_slug'],
+                'steps_text': row['steps_text'],
             }
+            build_tutorial_url(new_obj)
             answer_as_list.append(new_obj)
 
         # Identify relevant knowledge IDs

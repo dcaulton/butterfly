@@ -1,5 +1,6 @@
 import base64
 import copy
+import datetime
 import logging
 import pickle
 import redis
@@ -50,6 +51,7 @@ class RedisSessionWrapper():
 
     def save_obj_to_redis(self, key, data):
         try:
+            data['last_modified'] = str(datetime.datetime.now())
             tl_p = pickle.dumps(data)
             tl_b = base64.b64encode(tl_p)
             self.r.set(key, tl_b)
