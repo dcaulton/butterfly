@@ -1,7 +1,9 @@
 import logging
 import openai
+import requests
 import inspect
 from traceback import format_exc
+from urllib.parse import urljoin
 
 from .controller_gpt import GptController
 from .controller_kbot import KbotController
@@ -514,24 +516,40 @@ class AskController():
             else:
                 return "No data found for the target IDs."
 
-
-
-        def build_tutorial_url(new_obj):
-            new_obj = {
-                'id': row['id'],
-                'manufacturer': row['manufacturer_label'],
-                'product': row['product_name'],
-                'os': row['os_name'],
-                'steps': row['steps_text'],
-                'manufacturer_id': row['manufacturer_id'],
-                'os_id': row['os_id'],
-                'product_id': row['product_id'],
-                'topic_name': row['topic_name'],
-                'category_id': row['category_id'],
-                'category_slug': row['category_slug'],
-                'topic_slug': row['topic_slug'],
-            }
+        def build_tutorial_url(kb_obj):
+            # get the real data
+            info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
+            info_resp = requests.get(info_url).json()
+            
             # build link, remove intermediate fields used to make that link
+            topic_type = kb_obj.get('topic_type')
+            flow = kb_obj.get('flow')
+            if topic_type == 'regular': # its a usecase
+                base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page='
+                product_slug = info_resp['product']['slug']
+                cat_slug = info_resp['category']['slug']
+                topic_slug = info_resp['topic']['slug']
+
+                url_parts = [f'{base_url}{product_slug}']
+                url_parts.append(cat_slug)
+                url_parts.append(topic_slug)
+                product_id = info_resp['product']['id']
+                topic_id = info_resp['topic']['id']
+                os_id = info_resp['os']['id']
+                last_segment = f'p5_d{product_id}_t{topic_id}_o{os_id}'
+                url_parts.append(last_segment)
+                the_url = '/'.join(s.strip('/') for s in url_parts)
+                kb_obj['tutorial_link'] = the_url
+                image_url = info_resp['product']['image']
+                kb_obj['image_link'] = image_url
+
+                info_steps = []
+                for step_data in info_resp['steps']:
+                    info_steps.append(step_data['text'])
+                kb_obj['steps'] = info_steps 
+#            elif (topic_type in ['flow', 'flow_continued']) and (flow == 'null'):  # its a TroubshootingWizard
+#            else:  # its an Installation Assistant
+
 
 
         ###############################################
@@ -576,20 +594,20 @@ class AskController():
 
             new_obj = {
                 'id': row['id'],
-                'manufacturer_label': row['manufacturer_label'],
-                'manufacturer_id': row['manufacturer_id'],
-                'os_name': row['os_name'],
-                'os_id': row['os_id'],
-                'product_name': row['product_name'],
-                'product_id': row['product_id'],
+                'manufacturer': row['manufacturer_label'],
+#                'manufacturer_id': int(row['manufacturer_id']),
+                'os': row['os_name'],
+#                'os_id': int(row['os_id']),
+                'product': row['product_name'],
+#                'product_id': int(row['product_id']),
                 'flow': row['flow'],
                 'topic_type': row['topic_type'],
-                'topic_name': row['topic_name'],
-                'topic_id': row['topic_id'],
-                'category_id': row['category_id'],
-                'category_slug': row['category_slug'],
-                'topic_slug': row['topic_slug'],
-                'steps_text': row['steps_text'],
+#                'topic_name': row['topic_name'],
+#                'topic_id': int(row['topic_id']),
+#                'category_id': int(row['category_id']),
+#                'category_slug': row['category_slug'],
+#                'topic_slug': row['topic_slug'],
+#                'steps': row['steps'],
             }
             build_tutorial_url(new_obj)
             answer_as_list.append(new_obj)
