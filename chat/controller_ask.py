@@ -531,13 +531,35 @@ class AskController():
             topic_type = kb_obj.get('topic_type')
             flow = kb_obj.get('flow')
 
-            product_slug = info_resp['product']['slug']
-            cat_slug = info_resp['category']['slug']
-            topic_slug = info_resp['topic']['slug']
-            product_id = info_resp['product']['id']
-            topic_id = info_resp['topic']['id']
-            os_id = info_resp['os']['id']
-            image_url = info_resp['product']['image']
+            # be a little paranoid with the kb api, it has incomplete data
+            product_slug = ''
+            cat_slug = ''
+            topic_slug = ''
+            product_id = ''
+            topic_id = ''
+            os_id = ''
+            image_url = ''
+            product_obj = info_resp.get('product')
+            if product_obj and type(product_obj) == dict:
+                product_slug = product_obj.get('slug')
+            cat_obj = info_resp.get('category')
+            if cat_obj and type(cat_obj) == dict:
+                cat_slug = cat_obj.get('slug')
+            topic_obj = info_resp.get('topic')
+            if topic_obj and type(topic_obj) == dict:
+                topic_slug = topic_obj.get('slug')
+            product_obj = info_resp.get('product')
+            if product_obj and type(product_obj) == dict:
+                product_id = product_obj.get('id')
+            topic_obj = info_resp.get('topic')
+            if topic_obj and type(topic_obj) == dict:
+                topic_id = topic_obj.get('id')
+            os_obj = info_resp.get('os')
+            if os_obj and type(os_obj) == dict:
+                os_id = os_obj.get('id')
+            image_obj = info_resp.get('product')
+            if image_obj and type(image_obj) == dict:
+                image_url = image_obj.get('image')
 
             if topic_type == 'regular': # its a usecase
                 base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page='
@@ -692,30 +714,7 @@ class AskController():
         ###############################################
         self.chat_data['chat_history'] = history
  
-        kb_items = []
-        for lid in list_ids_as_arr:
-            kb_items.append({
-              'id': lid,
-              'manufacturer': 'oh my',
-              'product': 'hey',
-              'os': 'there', 
-              'steps': [
-                 'they',
-                 'are',
-                 'these',
-              ],
-              'tutorial_link': 'some url',
-              'image_link': 'some other url',
-            })
-
-        if answer_as_list:
-            return {
-                'message': data,
-                'kb_items': answer_as_list,
-            }
-        else:
-            return {
-                'message': data,
-                'kb_items': kb_items,
-            }
-
+        return {
+            'message': data,
+            'kb_items': answer_as_list,
+        }
