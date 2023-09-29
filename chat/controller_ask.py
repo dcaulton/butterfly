@@ -519,7 +519,14 @@ class AskController():
         def build_tutorial_url(kb_obj):
             # get the real data
             info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
-            info_resp = requests.get(info_url).json()
+            try:
+                info_resp = requests.get(info_url).json()
+            except Exception:
+                err_string = f'*** problem finding data for object, error accessing url {info_url} ***'
+                kb_obj['tutorial_link'] = err_string
+                kb_obj['image_link'] = err_string
+                kb_obj['steps'] = []
+                return
             
             topic_type = kb_obj.get('topic_type')
             flow = kb_obj.get('flow')
@@ -531,7 +538,6 @@ class AskController():
             topic_id = info_resp['topic']['id']
             os_id = info_resp['os']['id']
             image_url = info_resp['product']['image']
-
 
             if topic_type == 'regular': # its a usecase
                 base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page='
@@ -556,7 +562,6 @@ class AskController():
             for step_data in info_resp['steps']:
                 info_steps.append(step_data['text'])
             kb_obj['steps'] = info_steps 
-
 
 
         ###############################################
