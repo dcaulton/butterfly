@@ -44,6 +44,7 @@ class AskController():
         except Exception as e:
             logger.error(f'error processing request for {self.project}')
             logger.error(format_exc())
+            self.chat_data['errors'] = str(e)
             return {
                 'errors': [str(e)],
             }
@@ -602,6 +603,7 @@ class AskController():
 
         #Take the users side of the conversation and summarise into a coherent question (as the chat evolves)
         input_txt = self.input_txt
+        history.append({"role": "user", "content" :input_txt}) 
 
 # DMC let's assume context stays the same.  Clarifying answers seem to break this logic, 
 #    e.g. 'how to add wifi', 'its an iphone 11' will register as a context change 
@@ -658,7 +660,6 @@ class AskController():
 #            history.append({"role": "user", "content" :input_txt}) 
 #        else:
 #            history.append({"role": "user", "content" :input_txt, "context_change": True}) 
-        history.append({"role": "user", "content" :input_txt}) 
         history.append({"role": "assistant", "content" :data}) 
 
         #Format the list as text to feed back to GPT summary function
