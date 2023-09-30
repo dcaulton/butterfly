@@ -29,6 +29,7 @@ class AskController():
         self.knowledge = ''
         self.current_response_text = ''
         self.input_txt = self.request_data.get('input_text')
+        self.kbot_only = self.request_data.get('kbot_only')
         self.list_ids = ''
 
     def ask(self):
@@ -637,6 +638,11 @@ class AskController():
             build_tutorial_url(new_obj)
             answer_as_list.append(new_obj)
 
+        if self.kbot_only == 'yes':
+            return {
+                'message': '',
+                'kb_items': answer_as_list,
+            }
         # Identify relevant knowledge IDs
         list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)
 
