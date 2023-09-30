@@ -239,7 +239,9 @@ class AskController():
             
             #Create df of potential answers
             df_answers = df_knowledge[['id','language_name','manufacturer_label','manufacturer_id','os_name','os_id','product_name','product_id','topic_name','flow','topic_type','topic_id','topic_slug','category_id','category_slug','steps_text','cos_sim_max','cos_sim_log',]].sort_values(by=['cos_sim_max'], ascending = False).head(len(df_outliers['index']))
+            print(f"KBOT: outliers index is {df_outliers['index']}")
             
+            print(f'KBOT: initial df_answers: {df_answers}')
             df_answers = df_answers[df_answers['language_name'] == language_name]
 
             df_answers['steps_text'] = df_answers['steps_text'].str.replace('<[^<]+?>', '')
@@ -248,9 +250,9 @@ class AskController():
             df_answers['steps_text'] = df_answers['steps_text'].str.replace("*", "")
             #search_results = []
 
-            #If GPT has compiled a list of relevant IDs (after initial user question) filter using this list, save tokens
-            if len(list_ids.split(',')) > 0:
-                df_answers[df_answers.id.isin(list_ids.split(','))]
+#            #If GPT has compiled a list of relevant IDs (after initial user question) filter using this list, save tokens
+#            if len(list_ids.split(',')) > 0:
+#                df_answers[df_answers.id.isin(list_ids.split(','))]
 
             return df_answers
         ###############################################
@@ -531,13 +533,28 @@ class AskController():
             topic_type = kb_obj.get('topic_type')
             flow = kb_obj.get('flow')
 
-            product_slug = info_resp['product']['slug']
-            cat_slug = info_resp['category']['slug']
-            topic_slug = info_resp['topic']['slug']
-            product_id = info_resp['product']['id']
-            topic_id = info_resp['topic']['id']
-            os_id = info_resp['os']['id']
-            image_url = info_resp['product']['image']
+            product_slug = ''
+            cat_slug = ''
+            topic_slug = ''
+            product_id = ''
+            topic_id = ''
+            os_id = ''
+            image_url = ''
+            product_obj = info_resp.get('product')
+            if product_obj and type(product_obj) == dict:
+                product_slug = product_obj.get('slug')
+                product_id = product_obj.get('id')
+                image_url = product_obj.get('image')
+            topic_obj = info_resp.get('topic')
+            if topic_obj and type(topic_obj) == dict:
+                topic_slug = topic_obj.get('slug')
+                topic_id = topic_obj.get('id')
+            os_obj = info_resp.get('os')
+            if os_obj and type(os_obj) == dict:
+                os_id = os_obj.get('id')
+            cat_obj = info_resp.get('category')
+            if cat_obj and type(cat_obj) == dict:
+                cat_slug = cat_obj.get('slug')
 
             if topic_type == 'regular': # its a usecase
                 base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page='
@@ -567,9 +584,9 @@ class AskController():
         ###############################################
         #Initialise and reset variables, run this once before starting a new chat session
         global_cost = 0
-        question_summary = ''
-        history = []
-        conversation_summary = ''
+#        question_summary = ''
+#        history = []
+#        conversation_summary = ''
         transcript = ''
         knowledge = ''
         data = ''
@@ -577,31 +594,35 @@ class AskController():
         list_ids = ''
         ###############################################
         #run each time you want to add to the conversation
+        history = self.chat_data.get('chat_history', [])
+        conversation_summary = self.chat_data.get('conversation_summary', '')
+        question_summary = self.chat_data.get('question_summary', '')
 
         #Take the users side of the conversation and summarise into a coherent question (as the chat evolves)
         input_txt = self.input_txt
-        history = self.chat_data.get('chat_history', [])
 
-        #Check to see if context changed before submitting the question to the CosSim KB function
-        # TODO load conversation summary from the session on redis
-        context = same_context(conversation_summary, input_txt).lower()
-        conversation_summary = self.chat_data.get('chat_history')
-        if context == 'yes':
-            question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
-        else:
-            question_summary = input_txt # search criteria from new question only
-
-        #print('same_context: ' + str(context))
-
+# DMC let's assume context stays the same.  Clarifying answers seem to break this logic, 
+#    e.g. 'how to add wifi', 'its an iphone 11' will register as a context change 
+#        #Check to see if context changed before submitting the question to the CosSim KB function
+#        same_context = same_context(conversation_summary, input_txt).lower()
+#        if same_context == 'yes':
+#            question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
+#        else:
+#            question_summary = input_txt # search criteria from new question only
+        question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
+        print(f'MAIN: question summary is {question_summary}')
         search_txt = summarise_question(question_summary) 
-
         #Search and return relevant docs from the knowledge base
-        df_answers = K_BOT (search_txt,language_name,list_ids)
+        print(f'MAIN: search text is {search_txt}')
+        df_answers = K_BOT(search_txt,language_name,list_ids)
 
         #Convert relevant knowledge items into a 'table' to be included as context for the prompt
-        knowledge = 'ID\tmanufacturer\toperating system\tproduct\tanswer\tsteps'
+        knowledge = 'ID \t manufacturer label\t manufacturer id\t os name\t os id\t product name\t product id\t flow\t topic type\t topic name\t topic id\t category id\t category slug\t topic slug\t steps text\t'
+
         answer_as_list = []
+        list_ids_as_arr = []
         for index, row in df_answers.iterrows():
+            list_ids_as_arr.append(row['id'])
             knowledge =  knowledge + '\n' + row['id'] + '\t' + row['manufacturer_label'] + '\t' + str(row['manufacturer_id']) + '\t' + row['os_name'] + '\t' + str(row['os_id']) + '\t' + row['product_name'] + '\t' + str(row['product_id'])+ '\t' + str(row['flow'])  + '\t'+ str(row['topic_type']) + '\t'+ row['topic_name'] + '\t'+ str(row['topic_id']) +'\t' + str(row['category_id']) + '\t' + str(row['category_slug']) + '\t' + str(row['topic_slug']) + '\t' + row['steps_text']
 
             new_obj = {
@@ -615,107 +636,36 @@ class AskController():
             build_tutorial_url(new_obj)
             answer_as_list.append(new_obj)
 
-
-        ######################## DMC FOR TESTING
-#        new_obj = {
-#            'id': 'fd79e136-0553-42fc-89db-fd94b41c9b39',
-#            'manufacturer': 'TCL',
-#            'os': 'Android',
-#            'product': "10 Pro (Single SIM)",
-#            'flow': 'null',
-#            'topic_type': 'flow',
-#        }
-#        build_tutorial_url(new_obj)
-#        answer_as_list.append(new_obj)
-        ######################## END TESTING
-        
-
         # Identify relevant knowledge IDs
-        list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)#.split(',')
-        list_ids_as_arr = [x.strip() for x in list_ids.split(',')]
-        print(f'list ids as an array are {list_ids_as_arr}')
-        print(f'answer as an array are {answer_as_list}')
+        list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)
 
         #Come up with a response to the question
         data = run_prompt_3_5(search_txt, knowledge, conversation_summary).split('\n')
-        while("" in data):
-            data.remove("")
-        data = ''.join(data)
+        if type(data) == list: # some GPT weirdness, sometimes it gives us a string, sometimes an array
+            while("" in data):
+                data.remove("")
+            data = ''.join(data)
 
         #add Q&A to a list tracking the conversation
-        if context == 'yes':
-            history.append({"role": "user", "content" :input_txt}) 
-        else:
-            history.append({"role": "user", "content" :input_txt, "context_change": True}) 
+#        if same_context == 'yes':
+#            history.append({"role": "user", "content" :input_txt}) 
+#        else:
+#            history.append({"role": "user", "content" :input_txt, "context_change": True}) 
+        history.append({"role": "user", "content" :input_txt}) 
         history.append({"role": "assistant", "content" :data}) 
 
         #Format the list as text to feed back to GPT summary function
-        x=0
-        transcript =''
-        for i in history:
-            text = history[x]['role'] + '\t' + history[x]['content']
-            transcript = transcript + text +'\n'
-            x=x+1
+        t = [f"{x.get('role')}\t{x.get('content')}" for x in history]
+        transcript = '\n'.join(t)
 
         #summarise transcription for question answer function (this is after the results to reduce wait time)
         conversation_summary = summarise_history_3_5(transcript)
         self.chat_data['conversation_summary'] = conversation_summary
-
-        import json
-
-        # a Python object (dict):
-        output = {
-        "conversationID": "007",
-        #"question": input_txt,
-        #"search": search_txt,
-        "response": data,
-        "IDS": list_ids
-        }
-
-        # convert into JSON:
-        output_json = json.dumps(output['response'])
-
-          
-        # the result is a JSON string:
-
-        filtered_df=df_answers[df_answers.id.isin(list_ids.split(','))]
-        listofids = filtered_df['id']
-
-        #if not filtered_df.empty:
-        #    detailsjson=get_knowledgebase_details(filtered_df)
-        #    if detailsjson is not None:
-        #       print(output_json) 
-        #       print(detailsjson)
-        #else:
-        #    print(output_json)
-        print('output is ', output_json)
-        ###############################################
+        self.chat_data['question_summary'] = question_summary
         self.chat_data['chat_history'] = history
+        self.chat_data['latest_kb_ids'] = list_ids_as_arr
  
-        kb_items = []
-        for lid in list_ids_as_arr:
-            kb_items.append({
-              'id': lid,
-              'manufacturer': 'oh my',
-              'product': 'hey',
-              'os': 'there', 
-              'steps': [
-                 'they',
-                 'are',
-                 'these',
-              ],
-              'tutorial_link': 'some url',
-              'image_link': 'some other url',
-            })
-
-        if answer_as_list:
-            return {
-                'message': data,
-                'kb_items': answer_as_list,
-            }
-        else:
-            return {
-                'message': data,
-                'kb_items': kb_items,
-            }
-
+        return {
+            'message': data,
+            'kb_items': answer_as_list,
+        }
