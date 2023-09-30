@@ -8,7 +8,7 @@ from traceback import format_exc
 import uuid
 
 
-SESSION_KEY_PREFIX = 'qelp_'
+SESSION_KEY_PREFIX = 'phone_support_'
 MAX_SESSIONS_IN_LIST = 200
 
 logger = logging.getLogger(__name__)
