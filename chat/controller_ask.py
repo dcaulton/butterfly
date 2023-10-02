@@ -675,7 +675,7 @@ class AskController():
         self.chat_data['conversation_summary'] = conversation_summary
         self.chat_data['question_summary'] = question_summary
         self.chat_data['chat_history'] = history
-        self.chat_data['latest_kb_ids'] = list_ids_as_arr
+        self.chat_data['latest_kb_items'] = answer_as_list
  
         return {
             'message': data,
