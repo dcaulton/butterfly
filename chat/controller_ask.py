@@ -625,7 +625,11 @@ class AskController():
 
         answer_as_list = []
         list_ids_as_arr = []
+        counter = 0
         for index, row in df_answers.iterrows():
+            if counter > 2: 
+                break
+            counter += 1 
             list_ids_as_arr.append(row['id'])
             knowledge =  knowledge + '\n' + row['id'] + '\t' + row['manufacturer_label'] + '\t' + str(row['manufacturer_id']) + '\t' + row['os_name'] + '\t' + str(row['os_id']) + '\t' + row['product_name'] + '\t' + str(row['product_id'])+ '\t' + str(row['flow'])  + '\t'+ str(row['topic_type']) + '\t'+ row['topic_name'] + '\t'+ str(row['topic_id']) +'\t' + str(row['category_id']) + '\t' + str(row['category_slug']) + '\t' + str(row['topic_slug']) + '\t' + row['steps_text']
 
