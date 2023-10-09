@@ -97,6 +97,7 @@ six
 sqlparse
 stack-data
 sympy
+tenacity
 threadpoolctl
 tokenizers
 tomli
