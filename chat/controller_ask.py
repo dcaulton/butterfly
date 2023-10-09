@@ -30,6 +30,9 @@ class AskController():
         self.current_response_text = ''
         self.input_txt = self.request_data.get('input_text')
         self.kbot_only = self.request_data.get('kbot_only')
+        if self.kbot_only:
+            print("user requested kbot_only processing")
+        self.supplied_search_text = self.request_data.get('search_text')
         self.list_ids = ''
 
     def ask(self):
@@ -600,6 +603,7 @@ class AskController():
 #        question_summary = ''
 #        history = []
 #        conversation_summary = ''
+        search_txt = ''
         transcript = ''
         knowledge = ''
         data = ''
@@ -625,9 +629,16 @@ class AskController():
 #            question_summary = input_txt # search criteria from new question only
         question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
         print(f'MAIN: question summary is {question_summary}')
-        search_txt = summarise_question(question_summary) 
+        if self.supplied_search_text:
+            #MAMA
+            search_txt = self.supplied_search_text
+            if not search_txt.strip().startswith('"'):
+                search_txt = '"' + self.supplied_search_text + '"'
+            print(f'MAIN: user supplied search text is *{search_txt}*')
+        else:
+            search_txt = summarise_question(question_summary) 
+            print(f'MAIN: summarised search text is *{search_txt}*')
         #Search and return relevant docs from the knowledge base
-        print(f'MAIN: search text is {search_txt}')
         df_answers = K_BOT(search_txt, language_name, list_ids)
 
         #Convert relevant knowledge items into a 'table' to be included as context for the prompt
@@ -657,7 +668,7 @@ class AskController():
         if self.kbot_only == 'yes':
             return {
                 'message': '',
-                'kb_items': answer_as_list,
+                'kb_items': [x.get('id') for x in answer_as_list]
             }
         # Identify relevant knowledge IDs
         list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)
