@@ -66,12 +66,7 @@ class ChatSessionViewSet(viewsets.ViewSet):
     if not r.session_exists(pk):
         return Response('session not found', status=500)
     chat_data = r.get_data_from_session(pk)
-    resp_data = {
-      'session_key': request.session.session_key,
-      'chat_history': chat_data.get('chat_history', []),
-      'conversation_summary': chat_data.get('conversation_summary', ''),
-    }
-    return Response(resp_data)
+    return Response(chat_data)
 
   def delete(self, request, pk):
     r = RedisSessionWrapper()
