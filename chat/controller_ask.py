@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 
 from .controller_gpt import GptController
 from .controller_kbot import KbotController
+from chat import tasks as chat_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -691,12 +692,14 @@ class AskController():
         transcript = '\n'.join(t)
 
         #summarise transcription for question answer function (this is after the results to reduce wait time)
-        conversation_summary = summarise_history_3_5(transcript)
-        self.chat_data['conversation_summary'] = conversation_summary
+#        conversation_summary = summarise_history_3_5(transcript)
+#        self.chat_data['conversation_summary'] = conversation_summary
         self.chat_data['question_summary'] = question_summary
         self.chat_data['chat_history'] = history
         self.chat_data['latest_kb_items'] = answer_as_list
+        self.chat_data['transcript'] = transcript
  
+        chat_tasks.summarize_conversation.delay(self.session_key)
         return {
             'message': data,
             'kb_items': answer_as_list,
