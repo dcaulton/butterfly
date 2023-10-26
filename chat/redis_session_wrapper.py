@@ -8,7 +8,7 @@ from traceback import format_exc
 import uuid
 
 
-SESSION_KEY_PREFIX = 'phone_support_'
+SESSION_KEY_PREFIX = 'qelp_session_'
 MAX_SESSIONS_IN_LIST = 200
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,17 @@ class RedisSessionWrapper():
     def update_session_data(self, session_key, data_dict):
         self.save_obj_to_redis(session_key, data_dict)
 
+    def delete_sessions_for_project(self, project=''):
+        sess_proj_prefix = SESSION_KEY_PREFIX
+        if project:
+            sess_proj_prefix += project + '_'
+        deleted_count = 0
+        for key in self.r.scan_iter("*"):
+            if key.startswith(sess_proj_prefix):
+                resp = self.r.delete(key)
+                deleted_count += 1
+        return deleted_count
+
     def get_session_list(self):
         ret_dict = {}
         counter = 0
@@ -40,7 +51,7 @@ class RedisSessionWrapper():
         return ret_dict
 
     def create_new_session(self, project):
-        session_key = SESSION_KEY_PREFIX + str(uuid.uuid4())
+        session_key = SESSION_KEY_PREFIX + project + '_' + str(uuid.uuid4())
         session_data = {
             'chat_history': [],
             'conversation_summary': '',

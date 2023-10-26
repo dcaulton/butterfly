@@ -167,7 +167,8 @@ class AskController():
 
         ###############################################
         #Load knowledgebase data
-        df_knowledge = pd.read_csv("data/dataset_qelp_phone_support.csv")
+        dfk_path = f"data/dataset_qelp_{self.project}.csv"
+        df_knowledge = pd.read_csv(dfk_path)
         df_knowledge = df_knowledge.fillna('none')
         df_knowledge.dropna(inplace=True)
         df_knowledge.reset_index(level=0, inplace=True)
@@ -189,8 +190,8 @@ class AskController():
 
             return column_embeddings_list
         ###############################################
-        content_path = os.path.join('embeddings', 'phone_support', 'embeddings_Content.npy')
-        title_path = os.path.join('embeddings', 'phone_support', 'embeddings_title.npy')
+        content_path = os.path.join('embeddings', self.project, 'embeddings_Content.npy')
+        title_path = os.path.join('embeddings', self.project, 'embeddings_title.npy')
         embeddings_title = None
         embeddings_Content = None
         if not os.path.exists(content_path) or not os.path.exists(title_path):
@@ -199,12 +200,12 @@ class AskController():
             embeddings_title   = embedding_list(df_knowledge['topic_name'])
             embeddings_Content = embedding_list(df_knowledge['steps_text'])
             # Option to save embeddings if no change rather than re calc everytime
-            np.save('embeddings/phone_support/embeddings_title.npy', np.array(embeddings_title))
-            np.save('embeddings/phone_support/embeddings_Content.npy', np.array(embeddings_Content))
+            np.save(title_path, np.array(embeddings_title))
+            np.save(content_path, np.array(embeddings_Content))
         else:
             # Option to load saved embeddings if no change rather than re calc everytime
-            embeddings_title = np.load('embeddings/phone_support/embeddings_title.npy', allow_pickle= True).tolist()
-            embeddings_Content = np.load('embeddings/phone_support/embeddings_Content.npy', allow_pickle= True).tolist()
+            embeddings_title = np.load(title_path, allow_pickle= True).tolist()
+            embeddings_Content = np.load(content_path, allow_pickle= True).tolist()
         ###############################################
         # Calculate CosSim between question embeddings and article embeddings
         def cos_sim_list(embedding_question,embedding_list):
@@ -243,11 +244,10 @@ class AskController():
             #Identify outliers
             df_outliers = find_outliers_IQR(df_knowledge['cos_sim_log']).to_frame().reset_index(level=0, inplace=False)
             
+            print(f'KBOT: df outliers {df_outliers}')
             #Create df of potential answers
             df_answers = df_knowledge[['id','language_name','manufacturer_label','manufacturer_id','os_name','os_id','product_name','product_id','topic_name','flow','topic_type','topic_id','topic_slug','category_id','category_slug','steps_text','cos_sim_max','cos_sim_log',]].sort_values(by=['cos_sim_max'], ascending = False).head(len(df_outliers['index']))
-            print(f"KBOT: outliers index is {df_outliers['index']}")
             
-            print(f'KBOT: initial df_answers: {df_answers}')
             df_answers = df_answers[df_answers['language_name'] == language_name]
 
             df_answers['steps_text'] = df_answers['steps_text'].str.replace('<[^<]+?>', '')
@@ -257,9 +257,10 @@ class AskController():
             #search_results = []
 
 #            #If GPT has compiled a list of relevant IDs (after initial user question) filter using this list, save tokens
-#            if len(list_ids.split(',')) > 0:
-#                df_answers[df_answers.id.isin(list_ids.split(','))]
+            if len(list_ids.split(',')) > 0:
+                df_answers[df_answers.id.isin(list_ids.split(','))]
 
+            print(f'KBOT: initial df_answers: {df_answers}')
             return df_answers
         ###############################################
         with open("keys/openai_phone_support.txt","r") as f:
@@ -334,8 +335,8 @@ class AskController():
           global_cost = in_cost + out_cost
 
           return ''.join(completion.choices[0].message.content)
-        ###############################################
-        # Create a summary of the converstion so far to retain context of the conversation (understand back references from the user)
+        ############################################### # Create a summary of the converstion so far to retain context of the conversation (understand back references from the user)
+        @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
         def summarise_history_3_5(transcript):
           messages = [
               {"role": "user", "content" : "summarise the following conversation in as few words as possible\n" + transcript},
@@ -373,17 +374,16 @@ class AskController():
         )
         def run_prompt_3_5(prompt,knowledge,summary):
           max_knowledge_tokens = 10000
-          messages = [
-            {"role": "system", "content" :"you are friendly and helpful qelp technical support, this is your knowledgebase\n"  
-            + knowledge[:max_knowledge_tokens]
-            + "\nuse this knowledgebase to ask funelling questions until only one answer remains\n if it's a greetings just simply greet back\n"},
-            {"role": "user", "content" : "Identify the relevant knowledge base topic to answer the question, and provide a brief response, don't include the step by step procedure. Ensure to verify the manufacturer and product name if applicable. If the question is a greeting, respond with a simple greeting" 
-             +prompt}
-          ]
+          messages = [{"role": "system", "content" :"You are an expert but friendly and helpful Qelp technical support agent, you use the context that you are given to answer users' questions.\n"  
+                       + knowledge[:max_knowledge_tokens]
+                       + "\nuse the previous context to ask funelling questions until your are left with only one answer, If the provided context is not relevant to the question, you say that you are unable to answer the question, and ask clarifying questions\n"},
+                      {"role": "user", "content" : "Identify a single knowledgebase topic name that answers the question without including the step-by-step procedure. Ensure to verify the manufacturer and product name before giving an answer.\n if more information is needed ask for other information like OS version.\n" 
+                       +prompt}
+                      ]
           #list the ids from the knowledgebase which might answer this question\nreturn ids as a comma delimited list
           completion = openai.ChatCompletion.create(
             model="gpt-4",
-            temperature = 0.5,
+            temperature = 0,
             max_tokens=5000,
             top_p=1.0,
             frequency_penalty=0.9,
@@ -410,15 +410,12 @@ class AskController():
         )
         def knowledge_ids(prompt,knowledge,summary):
           max_knowledge_tokens = 10000
-          messages = [
-            {"role": "system", "content" :"you are friendly and helpful qelp technical support, this is your knowledgebase\n"  
-              + knowledge[:max_knowledge_tokens]
-            },
-            {"role": "user", "content" : "list the ids from the knowledgebase which answer this question or return an empty list if there are none\n" 
-              +prompt
-              +"\nreturn ids as a comma delimited list"
-            }
-          ]
+          messages = [{"role": "system", "content" :"You are an expert at identifying knowledgebase id's for the context that you are given that answer a given question\n"  
+                       + knowledge[:max_knowledge_tokens]},
+                      {"role": "user", "content" : "list only the ids from the knowledgebase which answer the following question or return an empty list if there are none, make sure to give actual id's, do not make them up or modify them\n" 
+                       +prompt
+                       +"\nreturn ids as a comma delimited list"}
+                      ]
           
           completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo-16k",
@@ -502,28 +499,28 @@ class AskController():
 #            json_data = convert_to_json(data_for_target_ids)
 #
 #            print(json_data)
-        ###############################################
-        def read_csv_data(file_path, target_ids):
-            data_for_target_ids = []
-
-            with open(file_path, 'r', encoding='utf-8') as csv_file:
-                csv_reader = csv.reader(csv_file)
-                next(csv_reader)
-                for row in csv_reader:
-                    if row[0] in target_ids:  # Assuming the ID is in the first column
-                        data_dict = {
-                            "id":column[0],
-                            "manufacturer_label": column[2],  # Change column1 to an appropriate name
-                            "product_name": column[5],  # Change column2 to an appropriate name
-                            "imageURL":"https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png",
-                            "os_name": column[9],
-                            "steps_text":column[10]
-                            # Add more columns as needed
-                        }
-                        data_for_target_ids.append(data_dict)
-
-            return data_for_target_ids
-        ###############################################
+#        ###############################################
+#        def read_csv_data(file_path, target_ids):
+#            data_for_target_ids = []
+#
+#            with open(file_path, 'r', encoding='utf-8') as csv_file:
+#                csv_reader = csv.reader(csv_file)
+#                next(csv_reader)
+#                for row in csv_reader:
+#                    if row[0] in target_ids:  # Assuming the ID is in the first column
+#                        data_dict = {
+#                            "id":column[0],
+#                            "manufacturer_label": column[2],  # Change column1 to an appropriate name
+#                            "product_name": column[5],  # Change column2 to an appropriate name
+#                            "imageURL":"https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png",
+#                            "os_name": column[9],
+#                            "steps_text":column[10]
+#                            # Add more columns as needed
+#                        }
+#                        data_for_target_ids.append(data_dict)
+#
+#            return data_for_target_ids
+#        ###############################################
 #        def convert_to_json(data):
 #            if data:
 #                return json.dumps(data, indent=4)
@@ -534,7 +531,14 @@ class AskController():
             # get the real data
             info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
             try:
-                info_resp = requests.get(info_url).json()
+                http_resp = requests.get(info_url)
+                if http_resp.status_code != 200:
+                    print(f'error, bad call for product data for {info_url}')
+                    return
+                info_resp = http_resp.json()
+                if not info_resp:
+                    print(f'error, empty product data found for {info_url}')
+                    return 
             except Exception:
                 err_string = f'*** problem finding data for object, error accessing url {info_url} ***'
                 kb_obj['tutorial_link'] = err_string
@@ -600,14 +604,13 @@ class AskController():
         ###############################################
         #Initialise and reset variables, run this once before starting a new chat session
         global_cost = 0
-#        question_summary = ''
-#        history = []
-#        conversation_summary = ''
         search_txt = ''
         transcript = ''
         knowledge = ''
         data = ''
         language_name = 'en_UK'
+        if self.project == 'tmobile':
+            language_name = 'en_US'
         list_ids = ''
         ###############################################
         #run each time you want to add to the conversation
@@ -642,7 +645,7 @@ class AskController():
         df_answers = K_BOT(search_txt, language_name, list_ids)
 
         #Convert relevant knowledge items into a 'table' to be included as context for the prompt
-        knowledge = 'ID \t manufacturer\t operating system\tproduct\tanswer\tsteps'
+        knowledge = 'ID\tmanufacturer\toperating system\tproduct\tanswer\tsteps'
 
         answer_as_list = []
         list_ids_as_arr = []
