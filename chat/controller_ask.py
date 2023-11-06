@@ -530,7 +530,11 @@ class AskController():
 #
         def build_tutorial_url(kb_obj):
             # get the real data
+            # assume phone_support as the default
             info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
+            if self.project == 'tmobile': 
+                info_url = f"https://tmobileusa-99-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
+
             try:
                 http_resp = requests.get(info_url)
                 if http_resp.status_code != 200:
@@ -692,14 +696,15 @@ class AskController():
         transcript = '\n'.join(t)
 
         #summarise transcription for question answer function (this is after the results to reduce wait time)
-#        conversation_summary = summarise_history_3_5(transcript)
-#        self.chat_data['conversation_summary'] = conversation_summary
+        conversation_summary = summarise_history_3_5(transcript)
+        self.chat_data['conversation_summary'] = conversation_summary
         self.chat_data['question_summary'] = question_summary
         self.chat_data['chat_history'] = history
         self.chat_data['latest_kb_items'] = answer_as_list
         self.chat_data['transcript'] = transcript
  
-        chat_tasks.summarize_conversation.delay(self.session_key)
+## DMC commented out until we can troubleshoot performance issues on the server
+#        chat_tasks.summarize_conversation.delay(self.session_key)
         return {
             'message': data,
             'kb_items': answer_as_list,
