@@ -581,17 +581,14 @@ class AskController():
                 os_id = os_obj.get('id')
 
             if topic_type == 'regular': # its a usecase
-                base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/qelp_test/en_UK/?page='
                 last_segment = f'p5_d{product_id}_t{topic_id}_o{os_id}'
             elif (topic_type in ['flow', 'flow_continued']) and (flow == 'null'):  # its a TroubshootingWizard
-                base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/hey-be/nl_BE/?page='
                 last_segment = f'p14_d{product_id}_t{topic_id}'
             else:  # its an Installation Assistant
-                base_url = 'http://qelp-qc5-client-staging.s3-website.eu-west-1.amazonaws.com/qc5/hey-be/nl_BE/?page='
                 last_segment = f'p15_d{product_id}_t{topic_id}'
 
             # common build logic
-            url_parts = [f'{base_url}{product_slug}']
+            url_parts = [product_slug]
             url_parts.append(cat_slug)
             url_parts.append(topic_slug)
             url_parts.append(last_segment)
