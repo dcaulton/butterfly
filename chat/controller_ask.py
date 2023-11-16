@@ -1,6 +1,8 @@
 import logging
+import json
 import openai
 import requests
+import time
 import inspect
 from traceback import format_exc
 from urllib.parse import urljoin
@@ -35,6 +37,9 @@ class AskController():
             print("user requested kbot_only processing")
         self.supplied_search_text = self.request_data.get('search_text')
         self.list_ids = ''
+        self.language_name = 'en_UK'
+        if self.project == 'tmobile':
+            self.language_name = 'en_US'
 
     def ask(self):
         # always return data or an errors array, never throw exceptions
@@ -53,115 +58,17 @@ class AskController():
                 'errors': [str(e)],
             }
 
-    def get_history(self):
-        #Check to see if context changed before submitting the question to the CosSim KB function
-        self.question_summary = self.input_txt # search criteria from new question only
-        self.conversation_summary = self.chat_data.get('conversation_summary', '')
-        if not self.chat_data.get('chat_history'): # new conversation
-            logger.info('NEW CONVO CONTEXT')
-            self.conversation_summary = self.gpt_controller.summarise_question(
-                self.question_summary, self.global_cost) 
-            return
-
-        self.history = self.chat_data.get('chat_history')
-
-        context = self.gpt_controller.same_context(self.conversation_summary, self.input_txt, self.global_cost).lower()
-        if context == 'yes':
-            self.question_summary += (' ' + self.input_txt) # search criteria from whole conversation
-            logger.info(f'UNCHANGED CONTEXT')
-        else:
-            self.question_summary = self.input_txt # search criteria from new question only
-            self.history = []
-            logger.info(f'CHANGED CONTEXT')
-        self.conversation_summary = self.gpt_controller.summarise_question(self.question_summary, self.global_cost) 
-
-    def add_q_and_a_to_chat_history(self):
-        #add Q&A to a list tracking the conversation
-        self.history.append({"role": "user", "content": self.input_txt}) 
-        self.history.append({"role": "assistant", "content": self.current_response_text, "list_ids": self.list_ids}) 
-
-    def save_conversation_data(self):
-        #summarise transcription for question answer function (this is after the results to reduce wait time)
-
-        #Format the list as text to feed back to GPT summary function
-        transcript = ''
-        for ind, item in enumerate(self.history):
-            print(f'one item  is {item}')
-            the_new = item['role'] + '\t' + item['content'] + '\n'
-            transcript += the_new
-
-        logger.info(f'\nTHE QUESTION IS: {self.input_txt}')
-        logger.info(f"I SEARCHED FOR DOCUMENTS RELATED TO: {self.conversation_summary}")
-        logger.info(f'I REPLIED: {self.current_response_text}')
-        conversation_summary = self.gpt_controller.summarise_history_3_5(transcript, self.global_cost)
-
-        self.chat_data['chat_history'] = self.history 
-        self.chat_data['conversation_summary'] = conversation_summary
-
-
-    def ask_qelp(self):
-        self.get_history()
-        df_answers = self.kbot_controller.K_BOT(self.conversation_summary, self.list_ids)
-        #Convert relevant knowledge items into a 'table' to be included as context for the prompt
-        self.knowledge = '\t'.join(('ID','manufacturer','operating system','product','answer','steps'))
-        for index, row in df_answers.iterrows():
-            back_string = '\t'.join((
-                row['id'], 
-                row['manufacturer_label'], 
-                row['os_name'], 
-                row['product_name'], 
-                row['topic_name'], 
-                row['steps_text']
-            ))
-            self.knowledge = self.knowledge + '\n' +  back_string
-
-        # Identify relevant knowledge IDs
-        self.list_ids = self.gpt_controller.knowledge_ids(
-            self.chat_data['conversation_summary'], 
-            self.knowledge, 
-            self.conversation_summary, 
-            self.global_cost
-        )
-
-        #Come up with a response to the question
-        self.current_response_text = self.gpt_controller.run_prompt_3_5(
-            self.chat_data['conversation_summary'], 
-            self.knowledge, 
-            self.conversation_summary, 
-            self.global_cost
-        )
-
-        self.add_q_and_a_to_chat_history()
-        self.save_conversation_data()
-
-        logger.info(f'CONVERSATION SUMMARY: {self.conversation_summary}')
-        logger.info(f'Cost: ${self.global_cost[0]}')
-
-        return {
-            'response_text': self.current_response_text,
-            'ids': self.list_ids,
-        }
-
     def ask_qelp2(self):
         ###############################################
         import numpy as np
         import pandas as pd
         import os
         import re
-        import html
-        import json
         import seaborn as sns
         import openai
         import requests
         import inspect
-        import csv
-        from tenacity import (
-            retry,
-            stop_after_attempt,
-            wait_random_exponential,
-            wait_exponential,
-            retry_if_exception_type
-        )
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from sklearn.metrics.pairwise import cosine_similarity
         from sklearn.metrics.pairwise import euclidean_distances
         from sentence_transformers import SentenceTransformer, util
@@ -193,9 +100,13 @@ class AskController():
         ###############################################
         content_path = os.path.join('embeddings', self.project, 'embeddings_Content.npy')
         title_path = os.path.join('embeddings', self.project, 'embeddings_title.npy')
+        concatlist_path = os.path.join('embeddings', self.project, 'embeddings_concat_columns.npy')
         embeddings_title = None
         embeddings_Content = None
+        embeddings_concatlist = None
         if not os.path.exists(content_path) or not os.path.exists(title_path):
+# TODO update this to calc the concatlist embedding when PM is available
+# TODO also, add this to the calc_embeddings management command
             print('calculating embeddings')
             #Create embeddings for each column we want to compare our text with
             embeddings_title   = embedding_list(df_knowledge['topic_name'])
@@ -207,6 +118,7 @@ class AskController():
             # Option to load saved embeddings if no change rather than re calc everytime
             embeddings_title = np.load(title_path, allow_pickle= True).tolist()
             embeddings_Content = np.load(content_path, allow_pickle= True).tolist()
+            embeddings_concatlist = np.load(concatlist_path, allow_pickle= True).tolist()
         ###############################################
         # Calculate CosSim between question embeddings and article embeddings
         def cos_sim_list(embedding_question,embedding_list):
@@ -227,7 +139,7 @@ class AskController():
            return outliers
         ###############################################
         #calculate: question embeddings, cosSim with articles, identify 'outliers', create DF of potential answers
-        def K_BOT(input_question,language_name,list_ids):
+        def K_BOT(input_question,list_ids):
             pd.set_option('display.max_colwidth', 5000)
 
             #question embeddings
@@ -235,6 +147,7 @@ class AskController():
 
             #calculate cosSim for included fields
             cos_sim_max = list(map(max, cos_sim_list(embeddings_q,embeddings_title),
+                                        cos_sim_list(embeddings_q,embeddings_concatlist),
                                         cos_sim_list(embeddings_q,embeddings_title)))
             df_knowledge['cos_sim_max'] = cos_sim_max
 
@@ -249,13 +162,12 @@ class AskController():
             #Create df of potential answers
             df_answers = df_knowledge[['id','language_name','manufacturer_label','manufacturer_id','os_name','os_id','product_name','product_id','topic_name','flow','topic_type','topic_id','topic_slug','category_id','category_slug','steps_text','cos_sim_max','cos_sim_log',]].sort_values(by=['cos_sim_max'], ascending = False).head(len(df_outliers['index']))
             
-            df_answers = df_answers[df_answers['language_name'] == language_name]
+            df_answers = df_answers[df_answers['language_name'] == self.language_name]
 
             df_answers['steps_text'] = df_answers['steps_text'].str.replace('<[^<]+?>', '')
             df_answers['steps_text'] = df_answers['steps_text'].str.replace("[", "")
             df_answers['steps_text'] = df_answers['steps_text'].str.replace("]", "")
             df_answers['steps_text'] = df_answers['steps_text'].str.replace("*", "")
-            #search_results = []
 
 #            #If GPT has compiled a list of relevant IDs (after initial user question) filter using this list, save tokens
             if len(list_ids.split(',')) > 0:
@@ -264,7 +176,8 @@ class AskController():
             print(f'KBOT: initial df_answers: {df_answers}')
             return df_answers
         ###############################################
-        with open("keys/openai_phone_support.txt","r") as f:
+        key_path = f"keys/openai_{self.project}.txt"
+        with open(key_path,"r") as f:
             my_API_key = f.read().strip()
         openai.api_key = my_API_key
         ###############################################
@@ -305,236 +218,291 @@ class AskController():
 #
 #          return ''.join(completion.choices[0].message.content)        
         ###############################################
-        # Function to summarise the user sequence into a concise string of key words for searching the KB
-        @retry( # Use the tenacity retry decorator
-            wait=wait_exponential(multiplier=1, min=4, max=10), # Use exponential backoff with a minimum and maximum wait time
-            stop=stop_after_attempt(10), # Stop retrying after 10 attempts
-            retry=retry_if_exception_type(openai.error.RateLimitError), # Retry only if the exception is a RateLimitError
-            reraise=True # Reraise the exception if the retrying fails
-        )
-        def summarise_question(questions):
-          messages = [{"role": "system", "content" : "Return search criteria"},
-                      {"role": "user", "content" : "convert the text into one concise search criteria which would work well in a search engine\n" + questions},
-                      {"role": "assistant", "content" :"my search query"}
-          ]
+        def call_gpt(p_messages, p_parameters):
+          start = round(time.time())
           
-          completion = openai.ChatCompletion.create(
-            model="gpt-4", 
-            temperature = 0.1,
-            max_tokens  = 500,
-            top_p=1,
-            frequency_penalty = 1.5,
-            presence_penalty  = 0.0,
-            messages = messages
-                        )
-          token_usage = completion.usage
-          token_usage["function"] = inspect.currentframe().f_code.co_name
+          if 'stream' in p_parameters:
+            completion = ''
+            for chunk in openai.ChatCompletion.create(
+            messages = p_messages,
+            model = p_parameters['model'], 
+            temperature = p_parameters['temperature'],
+            max_tokens = p_parameters['max_tokens'],
+            top_p = 1.0,
+            frequency_penalty = 0.5,
+            presence_penalty = 0.5,
+            stream = True
+            #stop=["."]
+            ):
+                
+              content = chunk["choices"][0].get("delta", {}).get("content")
+              if content is not None:
+                  completion += content
+                  print(content, end='')
+            
 
-          global global_cost
-          in_cost = (completion.usage['prompt_tokens'] * 0.03)/1000
-          out_cost = (completion.usage['completion_tokens'] * 0.06)/1000
-          global_cost = in_cost + out_cost
+            stop = round(time.time())
+            duration = stop - start
+            
+            # token_count = completion.usage
+            # token_count["function"] = inspect.currentframe().f_code.co_name
+            # print(token_count["function"] + ' - ' + str(token_count["total_tokens"]) + ' tokens, ' + str(duration) + ' sec')
+            #print(str(duration) + ' sec')
+            
+            return completion
+            
+          else:
+            if 'functions' in p_parameters:
+              completion = openai.ChatCompletion.create(
+              messages = p_messages,
+              
+              model = p_parameters['model'], 
+              temperature = p_parameters['temperature'],
+              max_tokens = p_parameters['max_tokens'],
+              functions = p_parameters['functions'],
+              function_call = p_parameters['function_call'],
+              top_p = 1.0,
+              frequency_penalty = 0.5,
+              presence_penalty = 0.5
+              #stop=["."]
+              )
+              
+            else: 
+              if 'functions' and 'stream' not in p_parameters:
+                completion = openai.ChatCompletion.create(
+                messages = p_messages,
+                
+                model = p_parameters['model'], 
+                temperature = p_parameters['temperature'],
+                max_tokens = p_parameters['max_tokens'],
+                top_p = 1.0,
+                frequency_penalty = 0.5,
+                presence_penalty = 0.5
+                #stop=["."]
+                )
+
+              stop = round(time.time())
+              duration = stop - start
+              
+              token_count = completion.usage
+              token_count["function"] = inspect.currentframe().f_code.co_name
+              #print(token_count["function"] + ' - ' + str(token_count["total_tokens"]) + ' tokens, ' + str(duration) + ' sec')
+              
+              return ''.join(completion.choices[0].message.content)
+
+          stop = round(time.time())
+          duration = stop - start
+          
+          token_count = completion.usage
+          token_count["function"] = inspect.currentframe().f_code.co_name
+          #print(token_count["function"] + ' - ' + str(token_count["total_tokens"]) + ' tokens, ' + str(duration) + ' sec')
+
+          return completion
+
+
+        # Create a summary of the converstion so far to retain context (understand back references from the user, and gradually build up knowledge)
+        def create_summary_text(conversation_summary,input_txt):
+            p_messages = [{'role': 'system', 'content' : "Here is the conversation so far"},
+                          {'role': 'assistant', 'content' : conversation_summary},
+                          {'role': 'user', 'content' : input_txt},
+                          {'role': 'user', 'content' : "Summarise the conversation.\nKeep just the relevant facts\nDo NOT speculate or make anything up"}                
+                         ]
+
+            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.1,'max_tokens':1000}
+
+            conversation_summary = call_gpt(p_messages,p_parameters)
+            #print(summary)
+            return conversation_summary
+
+        def context_and_summarization(previous_answer, question):
+            p_messages = [{'role': 'system', 'content' : "This is the conversation so far"},
+                                {'role': 'assistant', 'content' : previous_answer},
+                                {'role': 'user', 'content' : question},
+                                {'role': 'user', 'content' : "Check if the question is a continuation of the previous conversation, answer [yes] or [no], then convert the text into one concise sentance which would work well in a search engine.\nNot a list.\n"}]
+            
+            ## Functions capability
+            functions = [
+                {
+                "name": "confirm_context_and_summary",
+                "description": "Evaluate if the current question relates to the ongoing conversation context, and summarize the current question into search criteria",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                    "same_context": {
+                        "type": "string",
+                        "description": "Answer if the current question relates to the ongoing conversation with [yes] or [no]"
+                    },
+                    "question_summary": {
+                        "type": "string",
+                        "description": "Input to a search engine"
+                    }
+                    }
+                }
+                }
+            ]
+
+            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.1,'max_tokens':100, 'functions': functions, 'function_call': {'name': 'confirm_context_and_summary'}}
+
+            context_and_summary= call_gpt(p_messages,p_parameters)
+            context = json.loads(context_and_summary['choices'][0]['message']['function_call']['arguments'])['same_context']
+            summary = json.loads(context_and_summary['choices'][0]['message']['function_call']['arguments'])['question_summary']
+            print(context)
+            return context, summary
+
+        def call_gpt_1(p_messages, p_parameters):
+          start = round(time.time())
+
+          completion = openai.ChatCompletion.create(
+            messages = p_messages,
+            
+            model = p_parameters['model'], 
+            temperature = p_parameters['temperature'],
+            max_tokens = p_parameters['max_tokens'],
+            top_p = 1.0,
+            frequency_penalty = 0.5,
+            presence_penalty = 0.5
+            
+            #stop=["."]
+            )
+
+          stop = round(time.time())
+          duration = stop - start
+          
+          token_count = completion.usage
+          token_count["function"] = inspect.currentframe().f_code.co_name
+          print(token_count["function"] + ' - ' + str(token_count["total_tokens"]) + ' tokens, ' + str(duration) + ' sec')
+
 
           return ''.join(completion.choices[0].message.content)
-        ############################################### # Create a summary of the converstion so far to retain context of the conversation (understand back references from the user)
-        @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
-        def summarise_history_3_5(transcript):
-          messages = [
-              {"role": "user", "content" : "summarise the following conversation in as few words as possible\n" + transcript},
-              {"role": "assistant", "content" :"shortest summary without stop words"},
-          ]
-          
-          completion = openai.ChatCompletion.create(
-            model="gpt-4", 
-            temperature = 0.4,
-            max_tokens=1000,
-            top_p=1.0,
-            frequency_penalty=2,
-            presence_penalty=0.5,
-            #stop=["."],
-            messages = messages
-          )
-          
-          #Extract info for tokens used
-          token_usage = completion.usage
-          token_usage["function"] = inspect.currentframe().f_code.co_name
 
-          global global_cost
-          in_cost = (completion.usage['prompt_tokens'] * 0.03)/1000
-          out_cost = (completion.usage['completion_tokens'] * 0.06)/1000
-          global_cost = in_cost + out_cost
+        #Did the context change?
+        def same_context(previous_answer, question):
+                p_messages = [{'role': 'system', 'content' : "This is the conversation so far"},
+                                {'role': 'assistant', 'content' : previous_answer},
+                                {'role': 'user', 'content' : question},
+                                {'role': 'user', 'content' : "Is the following text a continuation of the previous conversation, [yes] or [no]\n"}]
 
-          return ''.join(completion.choices[0].message.content)
-        ###############################################
-        # This is the function which produces a response to the users question
-        @retry( # Use the tenacity retry decorator
-            wait=wait_exponential(multiplier=1, min=4, max=10), # Use exponential backoff with a minimum and maximum wait time
-            stop=stop_after_attempt(10), # Stop retrying after 10 attempts
-            retry=retry_if_exception_type(openai.error.RateLimitError), # Retry only if the exception is a RateLimitError
-            reraise=True # Reraise the exception if the retrying fails
-        )
-        def run_prompt_3_5(prompt,knowledge,summary):
-          max_knowledge_tokens = 10000
-          messages = [{"role": "system", "content" :"You are an expert but friendly and helpful Qelp technical support agent, you use the context that you are given to answer users' questions.\n"  
-                       + knowledge[:max_knowledge_tokens]
-                       + "\nuse the previous context to ask funelling questions until your are left with only one answer, If the provided context is not relevant to the question, you say that you are unable to answer the question, and ask clarifying questions\n"},
-                      {"role": "user", "content" : "Identify a single knowledgebase topic name that answers the question without including the step-by-step procedure. Ensure to verify the manufacturer and product name before giving an answer.\n if more information is needed ask for other information like OS version.\n" 
-                       +prompt}
-                      ]
-          #list the ids from the knowledgebase which might answer this question\nreturn ids as a comma delimited list
-          completion = openai.ChatCompletion.create(
-            model="gpt-4",
-            temperature = 0,
-            max_tokens=5000,
-            top_p=1.0,
-            frequency_penalty=0.9,
-            presence_penalty=0.5,
-            messages = messages
-          )
-          #Extract info for tokens used
-          token_usage = completion.usage
-          token_usage["function"] = inspect.currentframe().f_code.co_name
+                p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.5,'max_tokens':100}
 
-          global global_cost
-          in_cost = (completion.usage['prompt_tokens'] * 0.003)/1000
-          out_cost = (completion.usage['completion_tokens'] * 0.004)/1000
-          global_cost = in_cost + out_cost
+                same_context= call_gpt(p_messages,p_parameters)
+                print(same_context)
+                return same_context
 
-          return ''.join(completion.choices[0].message.content)
-        ###############################################
-        # This is the function which identifies the relevant item IDs
-        @retry( # Use the tenacity retry decorator
-          wait=wait_exponential(multiplier=1, min=4, max=10), # Use exponential backoff with a minimum and maximum wait time
-          stop=stop_after_attempt(10), # Stop retrying after 10 attempts
-          retry=retry_if_exception_type(openai.error.RateLimitError), # Retry only if the exception is a RateLimitError
-          reraise=True # Reraise the exception if the retrying fails
-        )
-        def knowledge_ids(prompt,knowledge,summary):
-          max_knowledge_tokens = 10000
-          messages = [{"role": "system", "content" :"You are an expert at identifying knowledgebase id's for the context that you are given that answer a given question\n"  
+        #Create serch text
+        def create_search_text(summary,input_txt):
+            p_messages = [{'role': 'system', 'content' : "You are typing into a search engine"},
+                          {'role': 'user', 'content' : "convert the text into one concise sentance which would work well in a search engine.\nNot a list.\n" + summary + "\n" + input_txt}]
+
+            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.1,'max_tokens':1000}
+
+            search_txt = call_gpt(p_messages,p_parameters)
+            return search_txt
+
+        #Search and return relevant docs from the knowledge base
+        def search_for_relevant_documents(search_txt,list_ids):
+            df_docs = K_BOT(search_txt,list_ids)
+            knowledge = 'ID\tmanufacturer\toperating system\tproduct\ttopic'
+            counter = 0
+            knowledge_ids_as_list = []
+            for index, row in df_docs.iterrows():
+                if counter > 2:
+                    break
+                knowledge_ids_as_list.append(row['id'])
+                counter += 1
+                knowledge =  knowledge + '\n' + row['id'] + '\t' + row['manufacturer_label'] + '\t' + row['os_name'] + '\t' + row['product_name']  +  '\t'+ row['topic_name']
+
+            return knowledge, knowledge_ids_as_list
+
+        def respond_to_the_question(knowledge,conversation_summary,input_txt):
+            p_messages = [{'role': 'system', 'content' : "You are an expert but friendly Qelp technical support agent. You pay strong attention to the user's question.You never refer to the user in third person. If the user expresses frustration, you use your soft skills to make the user feel understood. If the user states that the solution worked, or that they do not need your help anymore, you end the conversation gracefully without asking any further questions.  You use the context that you are given to answer users' questions.\n###" + knowledge + "###"},
+                          {'role': 'user', 'content' : "what do you remember of the conversation so far"},
+                          {'role': 'assistant', 'content' : conversation_summary},
+                          {'role': 'user', 'content' : input_txt},
+                          {'role': 'user', 'content':f"\nIdentify the knowledgebase IDs and topic names that answers the questions. Ensure to verify the manufacturer and product name before giving an answer and if needed, ask clarifying questions like OS version until one answer remains\n "},
+                         
+                         ]
+
+            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.3,'max_tokens':1000, 'stream': True}
+
+            kbot_reply = call_gpt(p_messages,p_parameters)
+
+            print('\n' + input_txt)
+            # print(kbot_reply + '\n')
+
+            return kbot_reply
+
+        def knowledge_ids(prompt,knowledge):
+            max_knowledge_tokens = 10000
+            p_messages = [{"role": "system", "content" :"You are an expert at identifying knowledgebase id's for the context that you are given that answer a given question\n"  
                        + knowledge[:max_knowledge_tokens]},
-                      {"role": "user", "content" : "list only the ids from the knowledgebase which answer the following question or return an empty list if there are none, make sure to give actual id's, do not make them up or modify them\n" 
+                        {"role": "user", "content" : "list only the ID from the knowledgebase which answer the following question or return an empty list if there are none, make sure to give actual id's, DO NOT make them up or modify them\n answer with IDs only" 
                        +prompt
-                       +"\nreturn ids as a comma delimited list"}
+                       +"\nreturn ID as a comma delimited list"}
                       ]
-          
-          completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-16k",
-            temperature = 0,
-            max_tokens=5000,
-            top_p=1.0,
-            frequency_penalty=0,
-            presence_penalty=0,
-            messages = messages
-          )
+           
+            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.0,'max_tokens':5000} 
+            listids = call_gpt(p_messages,p_parameters)
+            return listids 
 
-          #Extract info for tokens used
-          token_usage = completion.usage
-          token_usage["function"] = inspect.currentframe().f_code.co_name
+        def parallelize_response_ids(knowledge, conversation_summary, input_txt, max_workers=4):
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future1 = executor.submit(knowledge_ids, input_txt, knowledge)
+                future2 = executor.submit(respond_to_the_question, knowledge, conversation_summary, input_txt)
+                listids = future1.result()
+                kbot_reply = future2.result()
+                return listids, kbot_reply
 
-          global global_cost
-          in_cost = (completion.usage['prompt_tokens'] * 0.003)/1000
-          out_cost = (completion.usage['completion_tokens'] * 0.004)/1000
-          global_cost = in_cost + out_cost
+        def respond_to_the_question_1(knowledge,conversation_summary,input_txt):
+            p_messages = [{'role': 'system', 'content' : "You are here as an expert but friendly and helpful Qelp technical support agent, you use the context that you are given to answer users' questions.\n" + knowledge},
+                          {'role': 'user', 'content' : "what do you remember of the conversation so far"},
+                          {'role': 'assistant', 'content' : conversation_summary},
+                          {'role': 'user', 'content' : input_txt},
+                          {'role': 'user', 'content':"\nIdentify the knowledgebase IDs and topic names that answers the questions. Ensure to verify the manufacturer and product name before giving an answer and if needed, ask clarifying questions like OS version until one answer remains\n"},
+                         
+                         ]
 
-          return ''.join(completion.choices[0].message.content)
-#        ###############################################
-#        def get_knowledgebase_details(filtered_df):
-#            data_info = []
-#            new_data=[]
-#            for index, row in filtered_df.iterrows():
-#                id = row['id']
-#                url = f'https://horizoncms-251-staging.qelpcare.com/usecases/{id}'
-#                response = requests.get(url)
-#                data = response.json()
-#                data_info.append(data)
-#
-#            pd.set_option('display.max_colwidth', 5000)
-#            df_data = pd.DataFrame(data_info)
-#            ids = []
-#            manufacturer_labels = []
-#            product_names = []
-#            os_names = []
-#            steps_texts = []
-#            imageURLs =[]
-##MAMA
-#            if not df_data.empty:
-#                    for index, row in df_data.iterrows():
-#                        id = row['id']
-#                        manufacturer_label = row['manufacturer']['label']
-#                        product_name = row['product']['name']
-#                        imageURL = row["product"]["image"]
-#                        os_name = (row['os']['name'] if 'os' in row and row['os'] is not None and 'name' in row['os'] else 'UNKNOWN')
-#                        steps_text = [step['text'] for step in row['steps']]
-#                        first_three_steps = steps_text[:3]
-#                # Append the extracted values to the respective lists
-#                    #ids.append(id)
-#                    #manufacturer_labels.append(manufacturer_label)
-#                    #product_names.append(product_name)
-#                    #os_names.append(os_name)
-#                    #steps_texts.append(first_three_steps)
-#                    #imageURLs.append(imageURL)
-#                        data_dict  = {
-#                        'id': id,
-#                        'manufacturer': manufacturer_label,
-#                        'product': product_name,
-#                        'os': os_name,
-#                        'steps': first_three_steps,
-#                        'imgURL': imageURL
-#                        }
-#                        new_data.append(data_dict)
-#                    new_df = pd.DataFrame(new_data)
-#                    json_data = new_df.to_json(orient='index')
-#                    parsed_data = json.loads(json_data)
-#                    formatted_json = json.dumps(parsed_data, indent=4)
-#            #print(formatted_json)    
-#                    return formatted_json
-#            else:
-#                return  None     
-#        ###############################################
-#        def getdetails(listofids):
-#            file_path = 'source_data\dataset_qelp.csv'  # Replace with the actual path to your CSV file
-#            #target_ids = []  # Replace with the actual IDs you want to search for
-#
-#            data_for_target_ids = read_csv_data(file_path, listofids)
-#            json_data = convert_to_json(data_for_target_ids)
-#
-#            print(json_data)
-#        ###############################################
-#        def read_csv_data(file_path, target_ids):
-#            data_for_target_ids = []
-#
-#            with open(file_path, 'r', encoding='utf-8') as csv_file:
-#                csv_reader = csv.reader(csv_file)
-#                next(csv_reader)
-#                for row in csv_reader:
-#                    if row[0] in target_ids:  # Assuming the ID is in the first column
-#                        data_dict = {
-#                            "id":column[0],
-#                            "manufacturer_label": column[2],  # Change column1 to an appropriate name
-#                            "product_name": column[5],  # Change column2 to an appropriate name
-#                            "imageURL":"https://horizon-cms.s3.eu-central-1.amazonaws.com/image-service/18383fd9c650223dfc8a3882d848c1ae.png",
-#                            "os_name": column[9],
-#                            "steps_text":column[10]
-#                            # Add more columns as needed
-#                        }
-#                        data_for_target_ids.append(data_dict)
-#
-#            return data_for_target_ids
-#        ###############################################
-#        def convert_to_json(data):
-#            if data:
-#                return json.dumps(data, indent=4)
-#            else:
-#                return "No data found for the target IDs."
-#
-        def build_tutorial_url(kb_obj):
+            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.3,'max_tokens':1000}
+
+            kbot_reply = call_gpt(p_messages,p_parameters)
+
+            print('\n' + input_txt)
+            print(kbot_reply + '\n')
+
+            return kbot_reply
+
+        #Write transaction log to a file
+        def transaction_logging(conversation_summary,history):
+
+            transcript ='--- TRANSCRIPT ---\n\n'
+
+            for i in history:
+                txt = i['role'] + '\t' + i['content'] +'\n'
+                transcript = transcript + txt
+
+            transaction_summary = '--- SUMMARY ---\n\n' + conversation_summary + '\n\n' + transcript
+
+            with open('Transcript_history/log_' + str(round(time.time())) + '.txt', 'w') as f:
+                f.write(transaction_summary)
+
+
+        def build_kb_objects_from_ids(list_ids):
+            kb_objects = []
+            for kb_id in list_ids:
+                new_obj = fetch_and_build_kb_obj(kb_id)
+                kb_objects.append(new_obj)
+
+            return kb_objects
+
+
+        def fetch_and_build_kb_obj(kb_id):
             # get the real data
             # assume phone_support as the default
-            info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
+            kb_obj = {}
+            info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_id}"
             if self.project == 'tmobile': 
-                info_url = f"https://tmobileusa-99-staging.qelpcare.com/usecases/{kb_obj.get('id')}"
+                info_url = f"https://tmobileusa-99-staging.qelpcare.com/usecases/{kb_id}"
 
+            print(f'getting cms data for {info_url}')
             try:
                 http_resp = requests.get(info_url)
                 if http_resp.status_code != 200:
@@ -551,21 +519,28 @@ class AskController():
                 kb_obj['steps'] = []
                 return
             
-            topic_type = kb_obj.get('topic_type')
-            flow = kb_obj.get('flow')
-
             # be a little paranoid with the kb api, it has incomplete data
             product_slug = ''
             cat_slug = ''
             topic_slug = ''
             product_id = ''
+            product_name = ''
             topic_id = ''
             topic_name = ''
+            topic_type = ''
             os_id = ''
+            os_name = ''
             image_url = ''
+            flow = ''
+            manufacturer_obj = ''
+            manufacturer_name = ''
+            manufacturer_obj = info_resp.get('manufacturer')
+            if manufacturer_obj and type(manufacturer_obj) == dict:
+                manufacturer_name = manufacturer_obj.get('label')
             product_obj = info_resp.get('product')
             if product_obj and type(product_obj) == dict:
                 product_slug = product_obj.get('slug')
+                product_name = product_obj.get('name')
                 product_id = product_obj.get('id')
                 image_url = product_obj.get('image')
             cat_obj = info_resp.get('category')
@@ -576,9 +551,12 @@ class AskController():
                 topic_slug = topic_obj.get('slug')
                 topic_id = topic_obj.get('id')
                 topic_name = topic_obj.get('name')
+                topic_type = topic_obj.get('type')
             os_obj = info_resp.get('os')
+            flow = info_resp.get('flow')
             if os_obj and type(os_obj) == dict:
                 os_id = os_obj.get('id')
+                os_name = os_obj.get('name')
 
             if topic_type == 'regular': # its a usecase
                 last_segment = f'p5_d{product_id}_t{topic_id}_o{os_id}'
@@ -593,6 +571,11 @@ class AskController():
             url_parts.append(topic_slug)
             url_parts.append(last_segment)
             the_url = '/'.join(s.strip('/') for s in url_parts)
+            kb_obj['manufacturer'] = manufacturer_name
+            kb_obj['os'] = os_name
+            kb_obj['product'] = product_name
+            kb_obj['flow'] = flow
+            kb_obj['topic_type'] = topic_type 
             kb_obj['tutorial_link'] = the_url
             kb_obj['image_link'] = image_url
             kb_obj['topic_name'] = topic_name
@@ -602,6 +585,7 @@ class AskController():
                 info_steps.append(step_data['text'])
             kb_obj['steps'] = info_steps 
 
+            return kb_obj
 
         ###############################################
         #Initialise and reset variables, run this once before starting a new chat session
@@ -610,9 +594,6 @@ class AskController():
         transcript = ''
         knowledge = ''
         data = ''
-        language_name = 'en_UK'
-        if self.project == 'tmobile':
-            language_name = 'en_US'
         list_ids = ''
         ###############################################
         #run each time you want to add to the conversation
@@ -624,85 +605,25 @@ class AskController():
         input_txt = self.input_txt
         history.append({"role": "user", "content" :input_txt}) 
 
-# DMC let's assume context stays the same.  Clarifying answers seem to break this logic, 
-#    e.g. 'how to add wifi', 'its an iphone 11' will register as a context change 
-#        #Check to see if context changed before submitting the question to the CosSim KB function
-#        same_context = same_context(conversation_summary, input_txt).lower()
-#        if same_context == 'yes':
-#            question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
-#        else:
-#            question_summary = input_txt # search criteria from new question only
-        question_summary = question_summary + ' ' + input_txt # search criteria from whole conversation
-        print(f'MAIN: question summary is {question_summary}')
-        if self.supplied_search_text:
-            #MAMA
-            search_txt = self.supplied_search_text
-            if not search_txt.strip().startswith('"'):
-                search_txt = '"' + self.supplied_search_text + '"'
-            print(f'MAIN: user supplied search text is *{search_txt}*')
-        else:
-            search_txt = summarise_question(question_summary) 
-            print(f'MAIN: summarised search text is *{search_txt}*')
-        #Search and return relevant docs from the knowledge base
-        df_answers = K_BOT(search_txt, language_name, list_ids)
 
-        #Convert relevant knowledge items into a 'table' to be included as context for the prompt
-        knowledge = 'ID\tmanufacturer\toperating system\tproduct\tanswer\tsteps'
-
-        answer_as_list = []
-        list_ids_as_arr = []
-        counter = 0
-        for index, row in df_answers.iterrows():
-            if counter > 2: 
-                break
-            counter += 1 
-            list_ids_as_arr.append(row['id'])
-            knowledge =  knowledge + '\n' + row['id'] + '\t' + row['manufacturer_label'] + '\t' + str(row['manufacturer_id']) + '\t' + row['os_name'] + '\t' + str(row['os_id']) + '\t' + row['product_name'] + '\t' + str(row['product_id'])+ '\t' + str(row['flow'])  + '\t'+ str(row['topic_type']) + '\t'+ row['topic_name'] + '\t'+ str(row['topic_id']) +'\t' + str(row['category_id']) + '\t' + str(row['category_slug']) + '\t' + str(row['topic_slug']) + '\t' + row['steps_text']
-
-            new_obj = {
-                'id': row['id'],
-                'manufacturer': row['manufacturer_label'],
-                'os': row['os_name'],
-                'product': row['product_name'],
-                'flow': row['flow'],
-                'topic_type': row['topic_type'],
-            }
-            build_tutorial_url(new_obj)
-            answer_as_list.append(new_obj)
-
-        if self.kbot_only == 'yes':
-            return {
-                'message': '',
-                'kb_items': [x.get('id') for x in answer_as_list]
-            }
-        # Identify relevant knowledge IDs
-        list_ids = knowledge_ids(search_txt, knowledge, conversation_summary)
-
-        #Come up with a response to the question
-        data = run_prompt_3_5(search_txt, knowledge, conversation_summary).split('\n')
-        if type(data) == list: # some GPT weirdness, sometimes it gives us a string, sometimes an array
-            while("" in data):
-                data.remove("")
-            data = ''.join(data)
-
-        #add Q&A to a list tracking the conversation
-        history.append({"role": "assistant", "content" :data}) 
-
-        #Format the list as text to feed back to GPT summary function
-        t = [f"{x.get('role')}\t{x.get('content')}" for x in history]
-        transcript = '\n'.join(t)
+        input_txt = self.input_txt
+        context, search_txt = context_and_summarization(conversation_summary,input_txt)
+        conversation_summary = create_summary_text(conversation_summary,input_txt) #returns conversation_summary
+        search_txt = create_search_text(conversation_summary,input_txt)                 #returns search_txt
+        knowledge, knowledge_ids_as_list = search_for_relevant_documents(search_txt,list_ids) #returns knowledge
+        list_ids, kbot_reply = parallelize_response_ids(knowledge=knowledge, conversation_summary=conversation_summary, input_txt=input_txt)
+        history.append({"role":"user: ", "content":input_txt}) 
+        history.append({"role":"assistant: ", "content":kbot_reply})
+        kb_objects = build_kb_objects_from_ids(knowledge_ids_as_list)
 
         #summarise transcription for question answer function (this is after the results to reduce wait time)
-        conversation_summary = summarise_history_3_5(transcript)
         self.chat_data['conversation_summary'] = conversation_summary
         self.chat_data['question_summary'] = question_summary
         self.chat_data['chat_history'] = history
-        self.chat_data['latest_kb_items'] = answer_as_list
+        self.chat_data['latest_kb_items'] = kb_objects 
         self.chat_data['transcript'] = transcript
- 
-## DMC commented out until we can troubleshoot performance issues on the server
-#        chat_tasks.summarize_conversation.delay(self.session_key)
+
         return {
-            'message': data,
-            'kb_items': answer_as_list,
+            'message': kbot_reply,
+            'kb_items': kb_objects,
         }

@@ -13,4 +13,4 @@ scikit-learn
 sentence-transformers 
 ipdb
 redis
-tenacity
+concurrent
