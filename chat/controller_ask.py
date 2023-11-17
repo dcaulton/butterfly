@@ -111,9 +111,14 @@ class AskController():
             #Create embeddings for each column we want to compare our text with
             embeddings_title   = embedding_list(df_knowledge['topic_name'])
             embeddings_Content = embedding_list(df_knowledge['steps_text'])
+            df_knowledge["combined"] = (
+              "Manufacturer: " + df_knowledge.manufacturer_label.str.strip() + "; Product: " + df_knowledge.product_name.str.strip()+ "; Topic: " + df_knowledge.topic_name.str.strip()+ "; OS: " + df_knowledge.os_name.str.strip()
+            )
+            embeddings_concatlist = embedding_list(df_knowledge["combined"])
             # Option to save embeddings if no change rather than re calc everytime
             np.save(title_path, np.array(embeddings_title))
             np.save(content_path, np.array(embeddings_Content))
+            np.save(concatlist_path, np.array(embeddings_concatlist))
         else:
             # Option to load saved embeddings if no change rather than re calc everytime
             embeddings_title = np.load(title_path, allow_pickle= True).tolist()

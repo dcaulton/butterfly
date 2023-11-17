@@ -27,6 +27,7 @@ class KbotController():
             raise Exception('cannot find knowledgebase file for project ' + self.project)
         self.emb_title_path = os.path.join('embeddings', self.project, 'embeddings_title.npy')
         self.emb_content_path = os.path.join('embeddings', self.project, 'embeddings_Content.npy')
+        self.emb_concat_path = os.path.join('embeddings', self.project, 'embeddings_concat_columns.npy')
         if 'logger' in kwargs:
             logger = kwargs['logger']
         logger.info(f'kb path: {self.kb_path}')
@@ -75,6 +76,11 @@ class KbotController():
                 self.df_knowledge[self.embeddings_content_colname])
             np.save(self.emb_title_path, np.array(embeddings_title))
             np.save(self.emb_content_path, np.array(embeddings_Content))
+            self.df_knowledge["combined"] = (
+              "Manufacturer: " + self.df_knowledge.manufacturer_label.str.strip() + "; Product: " + self.df_knowledge.product_name.str.strip()+ "; Topic: " + self.df_knowledge.topic_name.str.strip()+ "; OS: " + self.df_knowledge.os_name.str.strip()
+            )
+            embeddings_concat_columns = self.build_embedding_list(self.df_knowledge["combined"])
+            np.save(self.emb_concat_path, np.array(embeddings_concat_columns))
             klm_filename = self.get_last_modified_filename(self.kb_path, self.project)
             Path(klm_filename).touch()
         else:
