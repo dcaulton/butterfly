@@ -1,5 +1,6 @@
 import logging
 import json
+from io import StringIO 
 import openai
 import requests
 import time
@@ -25,7 +26,6 @@ class AskController():
         self.kbot_controller = KbotController(project)
         self.gpt_controller = GptController(project)
         self.global_cost = [0.0]
-        self.question_summary = ''
         self.history = []
         self.conversation_summary = ''
         self.transcript = ''
@@ -144,7 +144,7 @@ class AskController():
            return outliers
         ###############################################
         #calculate: question embeddings, cosSim with articles, identify 'outliers', create DF of potential answers
-        def K_BOT(input_question,list_ids):
+        def K_BOT(input_question,list_ids,manufacturer,product):
             pd.set_option('display.max_colwidth', 5000)
 
             #question embeddings
@@ -165,9 +165,13 @@ class AskController():
             
             print(f'KBOT: df outliers {df_outliers}')
             #Create df of potential answers
-            df_answers = df_knowledge[['id','language_name','manufacturer_label','manufacturer_id','os_name','os_id','product_name','product_id','topic_name','flow','topic_type','topic_id','topic_slug','category_id','category_slug','steps_text','cos_sim_max','cos_sim_log',]].sort_values(by=['cos_sim_max'], ascending = False).head(len(df_outliers['index']))
+            df_answers = df_knowledge[['id','language_name','manufacturer_label','manufacturer_id','os_name','os_id','product_name','product_id', 'product_slug', 'topic_name','flow','topic_type','topic_id','topic_slug','category_id','category_slug','steps_text', 'imgaURL', 'cos_sim_max','cos_sim_log',]].sort_values(by=['cos_sim_max'], ascending = False).head(len(df_outliers['index']))
             
             df_answers = df_answers[df_answers['language_name'] == self.language_name]
+            if manufacturer is not None:
+                df_answers = df_answers[df_answers['manufacturer_label'] == manufacturer]
+            if product is not None:
+                df_answers = df_answers[df_answers['product_name'] == product] 
 
             df_answers['steps_text'] = df_answers['steps_text'].str.replace('<[^<]+?>', '')
             df_answers['steps_text'] = df_answers['steps_text'].str.replace("[", "")
@@ -181,47 +185,29 @@ class AskController():
             print(f'KBOT: initial df_answers: {df_answers}')
             return df_answers
         ###############################################
+        ##check the manufacturer##
+        def check_manufacturer_in_dataframe(input_txt, df_knowledge, column_tosearch):
+            
+            manufacturer_exists= matching_keyword = next((keyword for keyword in df_knowledge[column_tosearch].values if str(keyword).lower() in input_txt.lower()), None)
+            
+            return manufacturer_exists 
+        ##check product##
+        def check_product_in_dataframe(input_txt, df_knowledge, column_tosearchp):
+            
+            Product_exists= matching_keyword = next((keyword for keyword in df_knowledge[column_tosearchp].values if str(keyword).lower() in input_txt.lower()), None)
+            
+            return Product_exists
+        def check_os_in_dataframe(input_txt, df_knowledge, column_tosearchos):
+            
+            Os_exists= matching_keyword = next((keyword for keyword in df_knowledge[column_tosearchos].values if str(keyword).lower() in input_txt.lower()), None)
+            
+            return Os_exists  
+        ###############################################
+
         key_path = f"keys/openai_{self.project}.txt"
         with open(key_path,"r") as f:
             my_API_key = f.read().strip()
         openai.api_key = my_API_key
-        ###############################################
-#        # Same topic function
-#        def same_context(previous_answer, question):
-#          #prompt_tokens = len(prompt)
-#          #knowledge_tokens = len(knowledge)
-#          #summary_tokens = len(summary)
-#          #max_knowledge_tokens = 10000
-#
-#          messages = [{"role": "system", "content" : previous_answer + "\n\nIs the following text a continuation of the previous conversation, [yes] or [no]\n"},
-#
-#                      {"role": "user", "content" : question}
-#                      #{"role": "assistant", "content" :"if [yes] say '0'/nif [no] say '1'"},             
-#                      ]
-#          
-#          completion = openai.ChatCompletion.create(
-#            model="gpt-4", 
-#            temperature = 0.0,
-#            max_tokens=1,
-#            top_p=1.0,
-#            frequency_penalty=0.5,
-#            presence_penalty=0.5,
-#            #stop=["."],
-#            messages = messages
-#                        )
-#          
-#          #Extract info for tokens used
-#          token_usage = completion.usage
-#          token_usage["function"] = inspect.currentframe().f_code.co_name
-#          #Display token info (or not)
-#          #print(token_usage) 
-#
-#          global global_cost
-#          in_cost = (completion.usage['prompt_tokens'] * 0.03)/1000
-#          out_cost = (completion.usage['completion_tokens'] * 0.06)/1000
-#          global_cost = in_cost + out_cost
-#
-#          return ''.join(completion.choices[0].message.content)        
         ###############################################
         def call_gpt(p_messages, p_parameters):
           start = round(time.time())
@@ -305,6 +291,7 @@ class AskController():
           return completion
 
 
+
         # Create a summary of the converstion so far to retain context (understand back references from the user, and gradually build up knowledge)
         def create_summary_text(conversation_summary,input_txt):
             p_messages = [{'role': 'system', 'content' : "Here is the conversation so far"},
@@ -320,7 +307,7 @@ class AskController():
             return conversation_summary
 
         def context_and_summarization(previous_answer, question):
-            p_messages = [{'role': 'system', 'content' : "This is the conversation so far"},
+            p_messages = [{'role': 'system', 'content' : "This is the conversation so far, this is only to guide yourself, do not refer to it explicitly with the user."},
                                 {'role': 'assistant', 'content' : previous_answer},
                                 {'role': 'user', 'content' : question},
                                 {'role': 'user', 'content' : "Check if the question is a continuation of the previous conversation, answer [yes] or [no], then convert the text into one concise sentance which would work well in a search engine.\nNot a list.\n"}]
@@ -354,98 +341,46 @@ class AskController():
             print(context)
             return context, summary
 
-        def call_gpt_1(p_messages, p_parameters):
-          start = round(time.time())
-
-          completion = openai.ChatCompletion.create(
-            messages = p_messages,
-            
-            model = p_parameters['model'], 
-            temperature = p_parameters['temperature'],
-            max_tokens = p_parameters['max_tokens'],
-            top_p = 1.0,
-            frequency_penalty = 0.5,
-            presence_penalty = 0.5
-            
-            #stop=["."]
-            )
-
-          stop = round(time.time())
-          duration = stop - start
-          
-          token_count = completion.usage
-          token_count["function"] = inspect.currentframe().f_code.co_name
-          print(token_count["function"] + ' - ' + str(token_count["total_tokens"]) + ' tokens, ' + str(duration) + ' sec')
-
-
-          return ''.join(completion.choices[0].message.content)
-
-        #Did the context change?
-        def same_context(previous_answer, question):
-                p_messages = [{'role': 'system', 'content' : "This is the conversation so far"},
-                                {'role': 'assistant', 'content' : previous_answer},
-                                {'role': 'user', 'content' : question},
-                                {'role': 'user', 'content' : "Is the following text a continuation of the previous conversation, [yes] or [no]\n"}]
-
-                p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.5,'max_tokens':100}
-
-                same_context= call_gpt(p_messages,p_parameters)
-                print(same_context)
-                return same_context
-
-        #Create serch text
-        def create_search_text(summary,input_txt):
-            p_messages = [{'role': 'system', 'content' : "You are typing into a search engine"},
-                          {'role': 'user', 'content' : "convert the text into one concise sentance which would work well in a search engine.\nNot a list.\n" + summary + "\n" + input_txt}]
-
-            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.1,'max_tokens':1000}
-
-            search_txt = call_gpt(p_messages,p_parameters)
-            return search_txt
-
         #Search and return relevant docs from the knowledge base
-        def search_for_relevant_documents(search_txt,list_ids):
-            df_docs = K_BOT(search_txt,list_ids)
+        def search_for_relevant_documents(search_txt,list_ids,manufacturer,product):
+            df_docs = K_BOT(search_txt,list_ids,manufacturer,product)
+            
             knowledge = 'ID\tmanufacturer\toperating system\tproduct\ttopic'
-            counter = 0
-            knowledge_ids_as_list = []
             for index, row in df_docs.iterrows():
-                if counter > 2:
-                    break
-                knowledge_ids_as_list.append(row['id'])
-                counter += 1
                 knowledge =  knowledge + '\n' + row['id'] + '\t' + row['manufacturer_label'] + '\t' + row['os_name'] + '\t' + row['product_name']  +  '\t'+ row['topic_name']
-
-            return knowledge, knowledge_ids_as_list
+            #print(knowledge)
+            return knowledge
 
         def respond_to_the_question(knowledge,conversation_summary,input_txt):
-            p_messages = [{'role': 'system', 'content' : "You are an expert but friendly Qelp technical support agent. You pay strong attention to the user's question.You never refer to the user in third person. If the user expresses frustration, you use your soft skills to make the user feel understood. If the user states that the solution worked, or that they do not need your help anymore, you end the conversation gracefully without asking any further questions.  You use the context that you are given to answer users' questions.\n###" + knowledge + "###"},
-                          {'role': 'user', 'content' : "what do you remember of the conversation so far"},
-                          {'role': 'assistant', 'content' : conversation_summary},
-                          {'role': 'user', 'content' : input_txt},
-                          {'role': 'user', 'content':f"\nIdentify the knowledgebase IDs and topic names that answers the questions. Ensure to verify the manufacturer and product name before giving an answer and if needed, ask clarifying questions like OS version until one answer remains\n "},
-                         
-                         ]
+            
+            p_messages = [{'role': 'system', 'content' : "You're a knowledgeable yet amicable Qelp tech support agent. If the context is blank or empty, advise the user to contact support over the phone, if not, after identifying the specific item in context by checking the manufacturer, device, and OS first, provide a positive response, for instance, 'Here are the relevant knowledgebase articles for your query'. A separate process will disclose the knowledgebase id's, not you. Always focus on the user's question and avoid referring to them in third person. Display empathy if a user expresses frustration. If they mention that a solution worked or they no longer require assistance, conclude the conversation politely without pressing for more information. Use the provided context to respond to user's questions.\nContext: ###" + knowledge + "###, \nPrevious Conversation: ###" + conversation_summary + "###"},
+                          {'role': 'user', 'content': "If a generic question is made, make sure to ask for the manufacturer, OS and product name verification before responding and ask clarifying questions until only one answer remains. In case of absent context, don't mention your inability to access knowledgebase ID's or articles, instead advise the user to contact support over the phone. This will give you the necessary context to correctly answer the question. Avoid providing step-by-step guidance in your responses, but nevertheless, provide a positive answer AFTER ensuring that you have the manufacturer, device and OS that answers the user's question AND that is contained in the context. You might say: 'Here are the relevant knowledgebase articles for your query'. Keep the ID, Manufacturer, product, or OS undisclosed in responses. DO NOT list out the articles' names or ID's. Answer this question: ###"+input_txt+"### "}]
+            
+            
 
-            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.3,'max_tokens':1000, 'stream': True}
+            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.1,'max_tokens':1000, 'stream': True}
 
             kbot_reply = call_gpt(p_messages,p_parameters)
 
-            print('\n' + input_txt)
+            # print('\n' + input_txt)
             # print(kbot_reply + '\n')
 
             return kbot_reply
 
         def knowledge_ids(prompt,knowledge):
             max_knowledge_tokens = 10000
-            p_messages = [{"role": "system", "content" :"You are an expert at identifying knowledgebase id's for the context that you are given that answer a given question\n"  
-                       + knowledge[:max_knowledge_tokens]},
-                        {"role": "user", "content" : "list only the ID from the knowledgebase which answer the following question or return an empty list if there are none, make sure to give actual id's, DO NOT make them up or modify them\n answer with IDs only" 
-                       +prompt
-                       +"\nreturn ID as a comma delimited list"}
-                      ]
+            p_messages = [
+                {
+                "role": "system",
+                "content" :"You have been programmed to expertly identify knowledgebase id's from contextual information in response to a given query. You must provide the exact, unmodified id's that correlate to the question. If no id's are found applicable, an empty list should be returned. You will not communicate unavailability of a knowledgebase and you will NOT create or make up fictitious id's.\n###Knowledge: " + knowledge[:max_knowledge_tokens] + "###\n"
+                },
+                {
+                "role": "user",
+                "content" : "Extract and list the exact corresponding ID(s) from the previous knowledge context that answer the following question. If there are none, return an empty list and nothing else:\n" + prompt + "\nOutput only the three most relevant IDs in a comma-delimited format, it is of the utmost importance that you make sure to sort them in order of relevance."
+                }
+                ]
            
-            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.0,'max_tokens':5000} 
+            p_parameters = {'model':'gpt-4', 'temperature':0.0,'max_tokens':5000} 
             listids = call_gpt(p_messages,p_parameters)
             return listids 
 
@@ -455,148 +390,85 @@ class AskController():
                 future2 = executor.submit(respond_to_the_question, knowledge, conversation_summary, input_txt)
                 listids = future1.result()
                 kbot_reply = future2.result()
+                #print(kbot_reply)
+                print("\n\nList of ID's: ", listids)
                 return listids, kbot_reply
 
-        def respond_to_the_question_1(knowledge,conversation_summary,input_txt):
-            p_messages = [{'role': 'system', 'content' : "You are here as an expert but friendly and helpful Qelp technical support agent, you use the context that you are given to answer users' questions.\n" + knowledge},
-                          {'role': 'user', 'content' : "what do you remember of the conversation so far"},
-                          {'role': 'assistant', 'content' : conversation_summary},
-                          {'role': 'user', 'content' : input_txt},
-                          {'role': 'user', 'content':"\nIdentify the knowledgebase IDs and topic names that answers the questions. Ensure to verify the manufacturer and product name before giving an answer and if needed, ask clarifying questions like OS version until one answer remains\n"},
-                         
-                         ]
-
-            p_parameters = {'model':'gpt-3.5-turbo-16k', 'temperature':0.3,'max_tokens':1000}
-
-            kbot_reply = call_gpt(p_messages,p_parameters)
-
-            print('\n' + input_txt)
-            print(kbot_reply + '\n')
-
-            return kbot_reply
-
-        #Write transaction log to a file
-        def transaction_logging(conversation_summary,history):
-
-            transcript ='--- TRANSCRIPT ---\n\n'
-
-            for i in history:
-                txt = i['role'] + '\t' + i['content'] +'\n'
-                transcript = transcript + txt
-
-            transaction_summary = '--- SUMMARY ---\n\n' + conversation_summary + '\n\n' + transcript
-
-            with open('Transcript_history/log_' + str(round(time.time())) + '.txt', 'w') as f:
-                f.write(transaction_summary)
 
 
-        def build_kb_objects_from_ids(list_ids):
-            kb_objects = []
-            for kb_id in list_ids:
-                new_obj = fetch_and_build_kb_obj(kb_id)
-                kb_objects.append(new_obj)
+        ##added new function to get the details 11/29/2023
+        def getdetails(listIds, df_knowledge):
+            data_info = []
 
-            return kb_objects
+            # Iterate over rows in listIds
+            for index, row in listIds.iterrows():
+                id = row['ID']
 
+                # Query the knowledge DataFrame for the specific ID and select specific columns
+                result = df_knowledge.loc[df_knowledge['id'] == id, ['id', 'manufacturer_label', 'product_name', 'product_id','product_slug', 'os_name', 'os_id', 'topic_name', 'topic_type', 'topic_id', 'topic_slug', 'category_id', 'category_slug', 'flow', 'steps_text', 'imgaURL']]
 
-        def fetch_and_build_kb_obj(kb_id):
-            # get the real data
-            # assume phone_support as the default
-            kb_obj = {}
-            info_url = f"https://horizoncms-251-staging.qelpcare.com/usecases/{kb_id}"
-            if self.project == 'tmobile': 
-                info_url = f"https://tmobileusa-99-staging.qelpcare.com/usecases/{kb_id}"
+                # Check if the result is not empty
+                if not result.empty:
+                    # Extract necessary information for URL construction
+                    product_slug = result['product_slug'].iloc[0]
+                    cat_slug = result['category_slug'].iloc[0]
+                    topic_slug = result['topic_slug'].iloc[0]
+                    product_id = result['product_id'].iloc[0]
+                    topic_id = result['topic_id'].iloc[0]
+                    os_id = result['os_id'].iloc[0]
+                    topic_type = result['topic_type'].iloc[0]
+                    flow = result['flow'].iloc[0]
 
-            print(f'getting cms data for {info_url}')
-            try:
-                http_resp = requests.get(info_url)
-                if http_resp.status_code != 200:
-                    print(f'error, bad call for product data for {info_url}')
-                    return
-                info_resp = http_resp.json()
-                if not info_resp:
-                    print(f'error, empty product data found for {info_url}')
-                    return 
-            except Exception:
-                err_string = f'*** problem finding data for object, error accessing url {info_url} ***'
-                kb_obj['tutorial_link'] = err_string
-                kb_obj['image_link'] = err_string
-                kb_obj['steps'] = []
-                return
+                    # URL construction logic
+                    if topic_type == 'regular':
+                        last_segment = f'p5_d{product_id}_t{topic_id}_o{os_id}'
+                    elif (topic_type in ['flow', 'flow_continued']) and (flow == 'null'):
+                        last_segment = f'p14_d{product_id}_t{topic_id}'
+                    else:
+                        last_segment = f'p15_d{product_id}_t{topic_id}'
+
+                    url_parts = [product_slug,cat_slug, topic_slug, last_segment]
+                    the_url = '/'.join(s.strip('/') for s in url_parts)
+
+                    # Append the result and URL to data_info
+                    result_dict = result.iloc[0].to_dict()
+                    result_dict['tutorial_link'] = the_url
+                    data_info.append(result_dict)
+
+            # Create a DataFrame from data_info
+            df_data = pd.DataFrame(data_info)
+
+            if not df_data.empty:
+                # Convert the DataFrame to a JSON-formatted string
+                df_data.rename(columns={'imgaURL': 'image_link'}, inplace=True)
+                df_data.rename(columns={'manufacturer_label': 'manufacturer'}, inplace=True)
+                df_data.rename(columns={'os_name': 'os'}, inplace=True)
+                df_data.rename(columns={'product_name': 'product'}, inplace=True)
+                df_data.rename(columns={'steps_text': 'steps'}, inplace=True)
+                df_data = df_data[['id','manufacturer','os','product','flow','topic_type','tutorial_link','image_link','topic_name','steps']]
+                json_data = df_data.to_json()
+                return json_data
+            else:
+                return None
             
-            # be a little paranoid with the kb api, it has incomplete data
-            product_slug = ''
-            cat_slug = ''
-            topic_slug = ''
-            product_id = ''
-            product_name = ''
-            topic_id = ''
-            topic_name = ''
-            topic_type = ''
-            os_id = ''
-            os_name = ''
-            image_url = ''
-            flow = ''
-            manufacturer_obj = ''
-            manufacturer_name = ''
-            manufacturer_obj = info_resp.get('manufacturer')
-            if manufacturer_obj and type(manufacturer_obj) == dict:
-                manufacturer_name = manufacturer_obj.get('label')
-            product_obj = info_resp.get('product')
-            if product_obj and type(product_obj) == dict:
-                product_slug = product_obj.get('slug')
-                product_name = product_obj.get('name')
-                product_id = product_obj.get('id')
-                image_url = product_obj.get('image')
-            cat_obj = info_resp.get('category')
-            if cat_obj and type(cat_obj) == dict:
-                cat_slug = cat_obj.get('slug')
-            topic_obj = info_resp.get('topic')
-            if topic_obj and type(topic_obj) == dict:
-                topic_slug = topic_obj.get('slug')
-                topic_id = topic_obj.get('id')
-                topic_name = topic_obj.get('name')
-                topic_type = topic_obj.get('type')
-            os_obj = info_resp.get('os')
-            flow = info_resp.get('flow')
-            if os_obj and type(os_obj) == dict:
-                os_id = os_obj.get('id')
-                os_name = os_obj.get('name')
-
-            if topic_type == 'regular': # its a usecase
-                last_segment = f'p5_d{product_id}_t{topic_id}_o{os_id}'
-            elif (topic_type in ['flow', 'flow_continued']) and (flow == 'null'):  # its a TroubshootingWizard
-                last_segment = f'p14_d{product_id}_t{topic_id}'
-            else:  # its an Installation Assistant
-                last_segment = f'p15_d{product_id}_t{topic_id}'
-
-            # common build logic
-            url_parts = [product_slug]
-            url_parts.append(cat_slug)
-            url_parts.append(topic_slug)
-            url_parts.append(last_segment)
-            the_url = '/'.join(s.strip('/') for s in url_parts)
-            kb_obj['manufacturer'] = manufacturer_name
-            kb_obj['os'] = os_name
-            kb_obj['product'] = product_name
-            kb_obj['flow'] = flow
-            kb_obj['topic_type'] = topic_type 
-            kb_obj['tutorial_link'] = the_url
-            kb_obj['image_link'] = image_url
-            kb_obj['topic_name'] = topic_name
-
-            info_steps = []
-            for step_data in info_resp['steps']:
-                info_steps.append(step_data['text'])
-            kb_obj['steps'] = info_steps 
-
-            return kb_obj
+        def fix_output_data(input_string):
+            # This is a hack.  The data from the earlier stuff is in a form that does not conform to the contract
+            #   with the Qelp UI group.  It's not even a dict or list, it's a string. the keys are all different too
+            return_obj = []
+            json_data = json.loads(input_string)
+            print(f'JSON DATA KEYS {json_data.keys()}')
+            for kb_index in json_data.get('id', {}).keys():
+                kb_id = json_data['id'][kb_index]
+                build_dict = {}
+                for kb_field_name in json_data.keys():
+                    build_dict[kb_field_name] = json_data[kb_field_name][kb_index]
+                return_obj.append(build_dict)
+           
+            return return_obj
 
         ###############################################
         #Initialise and reset variables, run this once before starting a new chat session
-        global_cost = 0
         search_txt = ''
-        transcript = ''
         knowledge = ''
         data = ''
         list_ids = ''
@@ -604,31 +476,38 @@ class AskController():
         #run each time you want to add to the conversation
         history = self.chat_data.get('chat_history', [])
         conversation_summary = self.chat_data.get('conversation_summary', '')
-        question_summary = self.chat_data.get('question_summary', '')
+        kbot_reply = 'Hello, how can I help?'
+        column_tosearch = 'manufacturer_label'
+        column_tosearchp = 'product_name'
+        column_tosearchos = 'os_name'
+        manufacturer = None
+        product = None
+        df_answers=''
 
-        #Take the users side of the conversation and summarise into a coherent question (as the chat evolves)
         input_txt = self.input_txt
-        history.append({"role": "user", "content" :input_txt}) 
 
-
-        input_txt = self.input_txt
         context, search_txt = context_and_summarization(conversation_summary,input_txt)
         conversation_summary = create_summary_text(conversation_summary,input_txt) #returns conversation_summary
-        search_txt = create_search_text(conversation_summary,input_txt)                 #returns search_txt
-        knowledge, knowledge_ids_as_list = search_for_relevant_documents(search_txt,list_ids) #returns knowledge
+          
+        knowledge = search_for_relevant_documents(search_txt,list_ids,manufacturer,product)                         #returns knowledge
         list_ids, kbot_reply = parallelize_response_ids(knowledge=knowledge, conversation_summary=conversation_summary, input_txt=input_txt)
         history.append({"role":"user: ", "content":input_txt}) 
         history.append({"role":"assistant: ", "content":kbot_reply})
-        kb_objects = build_kb_objects_from_ids(knowledge_ids_as_list)
+        manufacturer=check_manufacturer_in_dataframe(input_txt, df_knowledge, column_tosearch)
+        product=check_product_in_dataframe(input_txt, df_knowledge, column_tosearchp)
+        osname=check_product_in_dataframe(input_txt, df_knowledge, column_tosearchos)
+        df_convert = pd.read_csv(StringIO(knowledge), sep='\t')
+        df_convert['ID'] = df_convert['ID'].str.strip()
+        cleaned_list_ids = [id.strip() for id in list_ids.split(',')]
+        filtered_df = df_convert[df_convert['ID'].str.lower().isin([id.lower() for id in cleaned_list_ids])]
+        jsonresult=getdetails(filtered_df,df_knowledge)
+        jsonresult = fix_output_data(jsonresult)  # this is a hack 
 
-        #summarise transcription for question answer function (this is after the results to reduce wait time)
         self.chat_data['conversation_summary'] = conversation_summary
-        self.chat_data['question_summary'] = question_summary
         self.chat_data['chat_history'] = history
-        self.chat_data['latest_kb_items'] = kb_objects 
-        self.chat_data['transcript'] = transcript
+        self.chat_data['latest_kb_items'] = jsonresult
 
         return {
             'message': kbot_reply,
-            'kb_items': kb_objects,
+            'kb_items': jsonresult,
         }
