@@ -454,6 +454,8 @@ class AskController():
         def fix_output_data(input_string):
             # This is a hack.  The data from the earlier stuff is in a form that does not conform to the contract
             #   with the Qelp UI group.  It's not even a dict or list, it's a string. the keys are all different too
+            if not input_string:
+                return []
             return_obj = []
             json_data = json.loads(input_string)
             print(f'JSON DATA KEYS {json_data.keys()}')
